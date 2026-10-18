@@ -1,0 +1,16 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <OutputType>WinExe</OutputType>
+    <TargetFramework>net8.0-windows</TargetFramework>
+    <UseWPF>true</UseWPF>
+    <UseWindowsForms>true</UseWindowsForms>
+    <AssemblyName>CustomWindDown</AssemblyName>
+    <ApplicationIcon>Assets\app.ico</ApplicationIcon>
+    <Version>0.1.0</Version>
+    <RuntimeFrameworkVersion>8.0.32</RuntimeFrameworkVersion>
+  </PropertyGroup>
+  <ItemGroup>
+    <ProjectReference Include="..\CustomWindDown.Core\CustomWindDown.Core.csproj" />
+    <Resource Include="Assets\app.ico" />
+  </ItemGroup>
+</Project>
