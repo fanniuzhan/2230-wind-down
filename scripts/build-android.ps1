@@ -15,7 +15,7 @@ $apk = Join-Path $projectRoot 'android\app\build\outputs\apk\debug\app-debug.apk
 $signer = Join-Path $toolchain.SdkRoot 'build-tools\36.0.0\apksigner.bat'
 & $signer verify --verbose $apk
 if ($LASTEXITCODE -ne 0) { throw 'APK signature validation failed.' }
-$destination = Join-Path $projectRoot 'artifacts\CustomWindDown-android-0.1.0-debug.apk'
+$destination = Join-Path $projectRoot 'artifacts\CustomWindDown-android-0.1.1-debug.apk'
 Copy-Item -LiteralPath $apk -Destination $destination -Force
 $apkHash = Get-FileHash -LiteralPath $destination -Algorithm SHA256
 $apkHash | Format-List

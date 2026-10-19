@@ -178,7 +178,10 @@ public final class NightGuardService extends AccessibilityService {
             Button phone = Ui.button(this, "电话", false);
             phone.setOnClickListener(view -> launchAllowed(allowed.phoneIntent()));
             Button clock = Ui.button(this, "闹钟", false);
-            clock.setOnClickListener(view -> launchAllowed(allowed.clockIntent()));
+            clock.setOnClickListener(view -> {
+                if (!allowed.openClock(this)) Toast.makeText(this,
+                        "未能打开系统时钟，请在白天重新检查闹钟兼容性。", Toast.LENGTH_LONG).show();
+            });
             for (Button action : new Button[] {phone, clock}) {
                 LinearLayout.LayoutParams actionParams = new LinearLayout.LayoutParams(0, -2, 1);
                 actionParams.topMargin = Ui.dp(this, 16);

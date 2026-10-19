@@ -311,9 +311,11 @@ public final class MainActivity extends Activity {
         LinearLayout preparation = Ui.column(this);
         int padding = Ui.dp(this, 24); preparation.setPadding(padding, Ui.dp(this, 8), padding, 0);
         preparation.addView(Ui.text(this, "闹钟 · 约一分钟后响铃", 15, Ui.INK));
-        preparation.addView(Ui.text(this, "先设置好闹钟，再回来开始试锁。", 12, Ui.MUTED));
+        preparation.addView(Ui.text(this, "先设置好闹钟，再回来开始试锁。若按钮打不开，可从手机桌面打开“时钟”。", 12, Ui.MUTED));
         Button clock = Ui.button(this, "打开系统闹钟", false);
-        clock.setOnClickListener(view -> open(allowed.clockIntent())); preparation.addView(clock);
+        clock.setOnClickListener(view -> {
+            if (!allowed.openClock(this)) toast("未能打开系统时钟，请从手机桌面打开“时钟”设置闹钟，再返回试锁。");
+        }); preparation.addView(clock);
         TextView phone = Ui.text(this, "来电 · 准备另一部手机", 15, Ui.INK);
         phone.setPadding(0, Ui.dp(this, 20), 0, 0); preparation.addView(phone);
         preparation.addView(Ui.text(this, "让对方在试锁期间拨入，检查接听与挂断。", 12, Ui.MUTED));

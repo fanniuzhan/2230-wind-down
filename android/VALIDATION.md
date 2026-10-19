@@ -1,6 +1,6 @@
 # Android MVP 验证记录
 
-日期：2026-10-19。版本：0.1.0，包名 `com.fanniuzhan.winddown`。目标真机：荣耀 Magic 8 / MagicOS 10 / Android 16。
+日期：2026-10-19。版本：0.1.1（versionCode 2），包名 `com.fanniuzhan.winddown`。目标真机：荣耀 Magic 8 / MagicOS 10 / Android 16。
 
 ## 本机自动化验证
 
@@ -22,6 +22,7 @@
 - 电话／闹钟组件识别失败或服务运行异常时撤下遮罩，避免拦截电话；主界面显示连接／组件状态及最近错误。
 - 收到开机／更新时间广播只重新调度，不自动授予权限，不自行启动无障碍服务，不自动启用计划。
 - 清单无网络权限，备份和设备传输排除本地应用数据；无文字、输入或按键采集代码。
+- 标准闹钟入口声明普通 `com.android.alarm.permission.SET_ALARM` 权限；只尝试已识别系统时钟的显式标准页面与桌面启动入口。遇到 `SecurityException` 或 `ActivityNotFoundException` 时继续尝试备用入口；代码不发送 `ACTION_SET_ALARM`，不创建或修改闹钟，不打开通用选择器。准备页与夜间页面共用导航逻辑。
 - 构建产物、SDK、缓存、签名密钥不提交源码仓库。现有 Windows 应用和设置未修改、未启动。
 
 ## 尚待荣耀真机验收
@@ -53,7 +54,17 @@
 
 ## 交付检查
 
-- `artifacts/CustomWindDown-android-0.1.0-debug.apk`，debug 签名测试版。`apksigner verify --verbose` 通过 APK v2 签名校验。
-- `aapt dump badging` 核实包名、版本 0.1.0、最低 API 26、目标 API 36、中文名称和启动 Activity；普通权限只有 `RECEIVE_BOOT_COMPLETED`，无 `INTERNET`。
-- SHA256：`96634ec226f07b42df43acd761f0ceb778e35f9fad695cfc52d5f60fdd27f064`。
+- `artifacts/CustomWindDown-android-0.1.1-debug.apk`，debug 签名测试版。`apksigner verify --verbose` 通过 APK v2 签名校验。
+- `aapt dump badging` 核实包名、版本 0.1.1、最低 API 26、目标 API 36、中文名称和启动 Activity；普通权限为 `RECEIVE_BOOT_COMPLETED` 与 `com.android.alarm.permission.SET_ALARM`，无 `INTERNET`。
+- SHA256：`42814cc79defe8fdb436d73f3c7f7846e1f8b6ed19c7f3752bf2db5b657863f9`。
 - 同目录包含 `.apk.sha256` 与 `Android-使用说明.md`；源码包含 Gradle Wrapper，分发校验值固定。产物不进入 Git。
+
+## 0.1.1 闹钟导航修复回归
+
+- 用户在荣耀真机截图中反馈“打开系统闹钟”提示入口不可用。旧版本仅调用标准 `ACTION_SHOW_ALARMS`，缺少入口所用普通权限和厂商备用路径；截图不能区分具体是权限拒绝还是缺少处理组件。
+- 40 项核心回归再次通过，APK 与测试 APK 均构建成功，Lint 0 错误、0 警告。
+- 专用 Android 16 模拟器运行 `ClockLaunchInstrumentation`：**12 项通过**，包括普通权限已授予、候选组件精确限定、成功后停止尝试、服务启动标志、入口拒绝与缺失后的备用路径、全部拒绝或没有组件时可恢复失败、实际打开系统闹钟，以及强制标准入口失败后实际打开系统时钟桌面入口。
+- `scripts/test-android-clock.py` 验证 0.1.0 → 0.1.1 覆盖更新及导航测试前后全部 SharedPreferences 保持一致；现有 23:30–06:30、每天、正式计划关闭的设置保留。结果保存在 `artifacts/android-emulator/clock-navigation-results.txt`。
+- 准备页实际按钮检查通过：点击“打开系统闹钟”后系统 Clock 闹钟页进入前台，截图为 `17-clock-fix-preparation.png` 与 `18-clock-fix-opened.png`。检查前后计划与试锁状态不变；首次检查被模拟器 System UI 无响应弹窗阻挡，选择等待恢复后通过。
+- 新旧 APK 签名证书 SHA256 一致，0.1.1 可直接覆盖更新，不需要卸载。
+- 本轮不创建闹钟、不开始试锁、不启用计划、不操作真实手机。此处通过的是导航与备用入口验证，不能替代上文尚未通过的闹铃实际播放测试或荣耀真机验收。

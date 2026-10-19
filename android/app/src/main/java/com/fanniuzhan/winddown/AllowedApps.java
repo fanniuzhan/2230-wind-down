@@ -8,13 +8,13 @@ import android.content.pm.ResolveInfo;
 import android.net.Uri;
 import android.provider.AlarmClock;
 import android.telecom.TelecomManager;
-import java.util.HashSet;
+import java.util.LinkedHashSet;
 import java.util.Set;
 
 /** Discover actual installed telephony and alarm components; never allow the generic "android" resolver. */
 final class AllowedApps {
-    final Set<String> phones = new HashSet<>();
-    final Set<String> clocks = new HashSet<>();
+    final Set<String> phones = new LinkedHashSet<>();
+    final Set<String> clocks = new LinkedHashSet<>();
     private final PackageManager packages;
 
     AllowedApps(Context context) {
@@ -44,7 +44,7 @@ final class AllowedApps {
 
     boolean ready() { return !phones.isEmpty() && !clocks.isEmpty(); }
     Intent phoneIntent() { return new Intent(Intent.ACTION_DIAL, Uri.parse("tel:")); }
-    Intent clockIntent() { return new Intent(AlarmClock.ACTION_SHOW_ALARMS); }
+    boolean openClock(Context context) { return ClockLauncher.open(context, clocks); }
     Intent emergencyIntent() {
         // Public SDK only: opens an editable system dialer, never places a call.
         // The Android keyguard's own emergency interface is left untouched.
