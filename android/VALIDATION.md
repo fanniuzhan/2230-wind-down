@@ -86,3 +86,9 @@
 - 另外将正式结束时间调整为下一分钟，真实等待其在熄屏期间到期，亮屏解锁后不恢复已到期的限制；计划开关仍为开启，证明解除来自时段结束。测试在退出前恢复原有 23:30–06:30、每天、计划关闭、兼容性未确认及无试锁状态，并再次读取 SharedPreferences 核实。
 - 结果位于 `artifacts/android-emulator/formal-screen-recovery-results.txt`。40 项核心回归通过，Lint 无问题，APK 签名通过。本次没有创建闹钟、模拟来电或连接真实手机；此前试锁下的电话检查与闹铃实响局限仍按前文记录。
 - 后续用户确认：此前问题发生于旧版，反馈时尚未安装 0.1.2。2026-10-19，用户在更新交流后明确反馈“上面刚提到的问题也解决了”，据此将 **0.1.2 正式计划内熄屏／解锁后限制恢复**记为荣耀 Magic 8 / MagicOS 10 / Android 16 的用户真机验证通过。本结论来自用户反馈，并非开发端直接操作真机；不扩展为闹铃实响、整晚后台保活等其他项目已通过。
+
+## GitHub Release 交付（2026-10-19）
+
+- 已公开发布 [Android v0.1.2 测试版](https://github.com/fanniuzhan/2230-wind-down/releases/tag/android-v0.1.2)，为非草稿预发布版本，标签 `android-v0.1.2` 指向 `9a3437a`。
+- 附件：`CustomWindDown-android-0.1.2-debug.apk`、`Android-install-guide.zh-CN.md`、`SHA256SUMS.txt`。上传前核对本地 APK，上传后核对 GitHub 返回的各文件 SHA256，再通过无需登录的公开下载链接下载全部附件，哈希均与本地一致。
+- APK SHA256 仍为 `82e73cba908e6347766995a665d9d73e85ccb037f1586ccb1b063a20d2da13d8`，使用同一已验证安装包；未重新构建或更换签名。源码与安装说明明确保留测试签名及实际验证范围。
