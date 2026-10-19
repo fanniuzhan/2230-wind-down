@@ -8,3 +8,4 @@
 android/gradlew text eol=lf
 android/gradlew.bat text eol=crlf
 android/gradle/wrapper/gradle-wrapper.jar binary
+*.cmd text eol=crlf

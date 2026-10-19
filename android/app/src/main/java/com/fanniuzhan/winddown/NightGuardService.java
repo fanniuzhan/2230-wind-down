@@ -9,6 +9,8 @@ import android.content.IntentFilter;
 import android.graphics.Color;
 import android.graphics.PixelFormat;
 import android.media.AudioManager;
+import android.media.AudioAttributes;
+import android.media.AudioPlaybackConfiguration;
 import android.os.Build;
 import android.os.Handler;
 import android.os.Looper;
@@ -63,6 +65,7 @@ public final class NightGuardService extends AccessibilityService {
         lastDiscovery = android.os.SystemClock.elapsedRealtime();
         windows = getSystemService(WindowManager.class);
         current = new WeakReference<>(this);
+        android.util.Log.i("WindDown", "Night guard connected");
         IntentFilter filter = new IntentFilter();
         filter.addAction(Intent.ACTION_SCREEN_ON); filter.addAction(Intent.ACTION_SCREEN_OFF);
         filter.addAction(Intent.ACTION_USER_PRESENT);
@@ -114,11 +117,20 @@ public final class NightGuardService extends AccessibilityService {
             AudioManager audio = getSystemService(AudioManager.class);
             boolean systemLocked = keyguard != null && keyguard.isKeyguardLocked();
             boolean ringing = audio != null && audio.getMode() == AudioManager.MODE_RINGTONE;
+            boolean alarmRinging = false;
+            if (restricted && audio != null) {
+                // Public, anonymized playback metadata only. Never capture audio or request microphone access.
+                for (AudioPlaybackConfiguration playback : audio.getActivePlaybackConfigurations()) {
+                    if (playback.getAudioAttributes().getUsage() == AudioAttributes.USAGE_ALARM) {
+                        alarmRinging = true; break;
+                    }
+                }
+            }
             if (!allowed.ready()) {
                 hideCover();
                 store.error("未能识别电话或闹钟组件，未开始拦截；请先完成本机兼容性检查。");
             } else if ((power == null || power.isInteractive()) && GuardPolicy.shouldCover(restricted,
-                    systemLocked, ringing, activePackage(), allowed.phones, allowed.clocks)) {
+                    systemLocked, ringing, alarmRinging, activePackage(), allowed.phones, allowed.clocks)) {
                 Instant until = active != null ? active.end : Instant.ofEpochMilli(store.trialUntil());
                 showCover(until, trial && active == null);
                 store.error("");
@@ -154,19 +166,35 @@ public final class NightGuardService extends AccessibilityService {
                         padding + insets.getSystemWindowInsetBottom());
                 return insets;
             });
-            panel.addView(Ui.text(this, "CUSTOM WIND-DOWN  /  NIGHT", 12, 0xFFC6DAD4));
-            heading = Ui.text(this, "今天就到这里。", 32, Color.WHITE); panel.addView(heading);
-            panel.addView(Ui.text(this, "让手机休息，也让自己休息。", 16, 0xFFC6DAD4));
-            countdown = Ui.text(this, "", 22, Color.WHITE);
-            countdown.setPadding(0, Ui.dp(this, 28), 0, Ui.dp(this, 24)); panel.addView(countdown);
-            panel.addView(Ui.text(this, "普通应用暂不可使用。电话与闹钟保留。\n期间不提供临时解除入口。", 14, 0xFFC6DAD4));
+            panel.addView(Ui.moon(this), new LinearLayout.LayoutParams(Ui.dp(this, 80), Ui.dp(this, 80)));
+            TextView label = nightText("收工助手  /  NIGHT", 11, Ui.PALE);
+            label.setLetterSpacing(.16f); label.setPadding(0, Ui.dp(this, 16), 0, Ui.dp(this, 24)); panel.addView(label);
+            heading = nightText("今晚，好好休息。", 28, Color.WHITE); panel.addView(heading);
+            panel.addView(nightText("让手机休息，也让自己休息。", 14, Ui.PALE));
+            countdown = nightText("", 20, Color.WHITE);
+            countdown.setPadding(0, Ui.dp(this, 28), 0, Ui.dp(this, 28)); panel.addView(countdown);
+            panel.addView(nightText("普通应用已暂停 · 电话与闹钟保留", 12, Ui.PALE));
+            LinearLayout actions = new LinearLayout(this); actions.setOrientation(LinearLayout.HORIZONTAL);
             Button phone = Ui.button(this, "电话", false);
-            phone.setOnClickListener(view -> launchAllowed(allowed.phoneIntent())); panel.addView(phone);
+            phone.setOnClickListener(view -> launchAllowed(allowed.phoneIntent()));
             Button clock = Ui.button(this, "闹钟", false);
-            clock.setOnClickListener(view -> launchAllowed(allowed.clockIntent())); panel.addView(clock);
+            clock.setOnClickListener(view -> launchAllowed(allowed.clockIntent()));
+            for (Button action : new Button[] {phone, clock}) {
+                LinearLayout.LayoutParams actionParams = new LinearLayout.LayoutParams(0, -2, 1);
+                actionParams.topMargin = Ui.dp(this, 16);
+                if (action == phone) actionParams.rightMargin = Ui.dp(this, 10);
+                actions.addView(action, actionParams);
+            }
+            panel.addView(actions);
             Button emergency = Ui.button(this, "紧急拨号 · 仅打开拨号盘", false);
+            emergency.setTextSize(13); emergency.setTextColor(Ui.PALE);
+            android.graphics.drawable.GradientDrawable emergencyBackground = Ui.background(Ui.DARK, this, 14);
+            emergencyBackground.setStroke(Ui.dp(this, 1), 0xFF526E60);
+            emergency.setBackground(new android.graphics.drawable.RippleDrawable(
+                    android.content.res.ColorStateList.valueOf(0x22CADBD0), emergencyBackground, Ui.background(Color.WHITE, this, 14)));
             emergency.setOnClickListener(view -> launchAllowed(allowed.emergencyIntent())); panel.addView(emergency);
-            panel.addView(Ui.text(this, "紧急拨号预填 112，可修改；不会自动呼叫。", 12, 0xFFC6DAD4));
+            TextView note = nightText("紧急拨号预填 112，可编辑，不会自动呼叫。\n此时段不提供临时解除。", 11, Ui.PALE);
+            note.setPadding(0, Ui.dp(this, 16), 0, 0); panel.addView(note);
             surface.addView(panel);
             WindowManager.LayoutParams params = new WindowManager.LayoutParams(-1, -1,
                     WindowManager.LayoutParams.TYPE_ACCESSIBILITY_OVERLAY,
@@ -177,12 +205,16 @@ public final class NightGuardService extends AccessibilityService {
             windows.addView(surface, params);
             cover = surface;
         }
-        heading.setText(trial ? "60 秒兼容性试锁" : "今天就到这里。");
+        heading.setText(trial ? "60 秒兼容性试锁" : "今晚，好好休息。");
         long seconds = Math.max(0, Duration.between(Instant.now(), until).getSeconds());
         countdown.setText(trial ? String.format(Locale.CHINA, "%d 秒后自动结束试锁", seconds)
                 : String.format(Locale.CHINA, "%s 自动恢复\n还有 %02d 小时 %02d 分 %02d 秒",
                         until.atZone(ZoneId.systemDefault()).toLocalTime().toString(),
                         seconds / 3600, seconds / 60 % 60, seconds % 60));
+    }
+
+    private TextView nightText(String text, int size, int color) {
+        TextView view = Ui.text(this, text, size, color); view.setGravity(Gravity.CENTER); return view;
     }
 
     private void launchAllowed(Intent intent) {
@@ -203,6 +235,7 @@ public final class NightGuardService extends AccessibilityService {
     }
     @Override public void onDestroy() { cleanup(); super.onDestroy(); }
     private void cleanup() {
+        android.util.Log.i("WindDown", "Night guard disconnected");
         handler.removeCallbacksAndMessages(null); hideCover();
         if (screenReceiverRegistered) { unregisterReceiver(screenReceiver); screenReceiverRegistered = false; }
         if (current.get() == this) current = new WeakReference<>(null);

@@ -6,15 +6,18 @@ import android.app.TimePickerDialog;
 import android.content.ActivityNotFoundException;
 import android.content.Intent;
 import android.graphics.Color;
+import android.graphics.Typeface;
 import android.os.Bundle;
 import android.os.Handler;
 import android.os.Looper;
 import android.provider.Settings;
 import android.view.View;
+import android.view.Gravity;
 import android.widget.Button;
 import android.widget.CheckBox;
 import android.widget.CompoundButton;
 import android.widget.LinearLayout;
+import android.widget.HorizontalScrollView;
 import android.widget.ScrollView;
 import android.widget.Switch;
 import android.widget.TextView;
@@ -36,6 +39,9 @@ public final class MainActivity extends Activity {
     };
     private TextView status;
     private TextView period;
+    private TextView morning;
+    private TextView morningLabel;
+    private TextView setupSummary;
     private TextView countdown;
     private TextView capabilities;
     private TextView error;
@@ -63,63 +69,117 @@ public final class MainActivity extends Activity {
     private void build(NightSchedule schedule) {
         ScrollView scroll = new ScrollView(this); scroll.setFillViewport(true); scroll.setBackgroundColor(Ui.CANVAS);
         LinearLayout page = Ui.column(this);
-        int padding = Ui.dp(this, 22);
+        // Opening the page should show its heading, including with an emulator keyboard attached.
+        page.setFocusableInTouchMode(true); page.requestFocus();
+        int padding = Ui.dp(this, 20);
         page.setPadding(padding, padding, padding, padding);
-        page.setOnApplyWindowInsetsListener((view, insets) -> {
-            view.setPadding(padding, padding + insets.getSystemWindowInsetTop(), padding,
-                    padding + insets.getSystemWindowInsetBottom()); return insets;
+        scroll.setOnApplyWindowInsetsListener((view, insets) -> {
+            // Keep scrolling content out of system bars, including while a night overlay is visible.
+            view.setPadding(insets.getSystemWindowInsetLeft(), insets.getSystemWindowInsetTop(),
+                    insets.getSystemWindowInsetRight(), insets.getSystemWindowInsetBottom()); return insets;
         });
-        page.addView(Ui.text(this, "◒  CUSTOM WIND-DOWN", 12, Ui.ACCENT));
-        TextView title = Ui.title(this, "今晚，把手机放下。"); title.setTextSize(28); page.addView(title);
-        page.addView(Ui.text(this, "给休息留一整夜。", 14, Ui.MUTED));
+        TextView brand = Ui.text(this, "收工助手  /  WIND-DOWN", 11, Ui.ACCENT);
+        brand.setLetterSpacing(.12f); page.addView(brand);
+        TextView title = Ui.title(this, "把夜晚，还给休息。"); title.setTextSize(27); page.addView(title);
+        TextView subtitle = Ui.text(this, "放下手机，留一点时间给自己。", 13, Ui.MUTED);
+        subtitle.setPadding(0, 0, 0, Ui.dp(this, 14)); page.addView(subtitle);
+
         LinearLayout hero = Ui.card(this, Ui.DARK);
-        hero.addView(Ui.text(this, "NIGHT ROUTINE  /  夜间使用限制", 11, 0xFFC6DAD4));
-        period = Ui.text(this, "22:30 → 06:30", 31, Color.WHITE); hero.addView(period);
-        status = Ui.text(this, "尚未启用", 16, Color.WHITE); hero.addView(status);
-        countdown = Ui.text(this, "首次安装默认关闭", 13, 0xFFC6DAD4); hero.addView(countdown);
+        LinearLayout heroTop = row(); heroTop.setGravity(Gravity.CENTER_VERTICAL);
+        TextView nightLabel = Ui.text(this, "你的休息时段", 12, Ui.PALE);
+        heroTop.addView(nightLabel, new LinearLayout.LayoutParams(0, -2, 1));
+        heroTop.addView(Ui.moon(this), new LinearLayout.LayoutParams(Ui.dp(this, 48), Ui.dp(this, 48)));
+        hero.addView(heroTop);
+        LinearLayout times = row();
+        times.setGravity(Gravity.CENTER_VERTICAL);
+        if (getResources().getConfiguration().fontScale > 1.3f) times.setOrientation(LinearLayout.VERTICAL);
+        period = Ui.text(this, "22:30", 36, Color.WHITE);
+        morning = Ui.text(this, "06:30", 36, Color.WHITE);
+        period.setTypeface(Typeface.create("sans-serif-light", Typeface.NORMAL));
+        morning.setTypeface(Typeface.create("sans-serif-light", Typeface.NORMAL));
+        addTimeColumn(times, "开始休息", period);
+        if (times.getOrientation() == LinearLayout.HORIZONTAL) {
+            TextView arrow = Ui.text(this, "—", 18, Ui.PALE); arrow.setGravity(Gravity.CENTER);
+            arrow.setPadding(0, Ui.dp(this, 20), 0, 0);
+            times.addView(arrow, new LinearLayout.LayoutParams(Ui.dp(this, 30), -2));
+        }
+        morningLabel = addTimeColumn(times, "次日恢复", morning);
+        hero.addView(times);
+        View divider = new View(this); divider.setBackgroundColor(0xFF3B5C50);
+        LinearLayout.LayoutParams dividerParams = new LinearLayout.LayoutParams(-1, Ui.dp(this, 1));
+        dividerParams.setMargins(0, Ui.dp(this, 8), 0, Ui.dp(this, 16)); hero.addView(divider, dividerParams);
+        status = Ui.text(this, "计划未启用", 14, Color.WHITE); hero.addView(status);
+        countdown = Ui.text(this, "完成本机检查后，即可开启。", 12, Ui.PALE); hero.addView(countdown);
         page.addView(hero);
 
         LinearLayout plan = Ui.card(this, Color.WHITE);
-        plan.addView(Ui.title(this, "夜间计划"));
-        plan.addView(Ui.text(this, "按本地时间执行，星期指开始限制的那一天。", 12, Ui.MUTED));
+        int planPadding = Ui.dp(this, 16); plan.setPadding(planPadding, planPadding, planPadding, planPadding);
+        enabled = new Switch(this); enabled.setText("夜间计划"); enabled.setTextSize(17); enabled.setTextColor(Ui.INK);
+        enabled.setTypeface(null, Typeface.BOLD); enabled.setMinHeight(Ui.dp(this, 48));
+        enabled.setSwitchMinWidth(Ui.dp(this, 48));
+        enabled.setContentDescription("启用夜间使用限制");
+        enabled.setOnCheckedChangeListener(this::toggleEnabled); plan.addView(enabled);
+        LinearLayout timeInputs = row();
+        if (getResources().getConfiguration().fontScale > 1.3f) timeInputs.setOrientation(LinearLayout.VERTICAL);
         start = Ui.button(this, "开始  " + NightSchedule.formatMinute(startMinute), false);
-        start.setOnClickListener(view -> chooseTime(true)); plan.addView(start);
+        start.setOnClickListener(view -> chooseTime(true));
         end = Ui.button(this, "结束  " + NightSchedule.formatMinute(endMinute), false);
-        end.setOnClickListener(view -> chooseTime(false)); plan.addView(end);
-        LinearLayout weekdays = new LinearLayout(this);
-        weekdays.setOrientation(LinearLayout.HORIZONTAL);
+        end.setOnClickListener(view -> chooseTime(false));
+        for (Button control : new Button[] {start, end}) {
+            LinearLayout.LayoutParams params = timeInputs.getOrientation() == LinearLayout.HORIZONTAL
+                    ? new LinearLayout.LayoutParams(0, -2, 1) : new LinearLayout.LayoutParams(-1, -2);
+            params.topMargin = Ui.dp(this, 8);
+            if (control == start && timeInputs.getOrientation() == LinearLayout.HORIZONTAL) params.rightMargin = Ui.dp(this, 8);
+            timeInputs.addView(control, params);
+        }
+        plan.addView(timeInputs);
+        TextView repeat = Ui.text(this, "重复 · 选择开始的星期", 12, Ui.MUTED);
+        repeat.setPadding(0, Ui.dp(this, 18), 0, 0); plan.addView(repeat);
+        HorizontalScrollView dayScroll = new HorizontalScrollView(this);
+        dayScroll.setHorizontalScrollBarEnabled(false); dayScroll.setFillViewport(true);
+        LinearLayout weekdays = row(); weekdays.setMinimumWidth(Ui.dp(this, 336));
         LinearLayout.LayoutParams weekdayParams = new LinearLayout.LayoutParams(-1, -2);
-        weekdayParams.topMargin = Ui.dp(this, 12); weekdays.setLayoutParams(weekdayParams);
+        dayScroll.setLayoutParams(weekdayParams);
         String[] labels = { "日", "一", "二", "三", "四", "五", "六" };
         for (int index = 0; index < 7; index++) {
             int day = (index + 1) % 7;
-            ToggleButton button = new ToggleButton(this);
-            button.setTextOn(labels[day]); button.setTextOff(labels[day]);
+            ToggleButton button = Ui.weekday(this, labels[day]);
             button.setChecked((schedule.daysMask & (1 << day)) != 0);
             button.setContentDescription("星期" + labels[day]);
-            button.setTextSize(12); button.setMinWidth(0); button.setMinimumWidth(0);
-            button.setPadding(0, 0, 0, 0);
             weekdays.addView(button, new LinearLayout.LayoutParams(0, Ui.dp(this, 48), 1));
             days[day] = button;
         }
-        plan.addView(weekdays);
-        enabled = new Switch(this); enabled.setText("启用夜间使用限制"); enabled.setTextSize(16);
-        enabled.setPadding(0, Ui.dp(this, 16), 0, Ui.dp(this, 10));
-        enabled.setOnCheckedChangeListener(this::toggleEnabled); plan.addView(enabled);
-        save = Ui.button(this, "保存时间与星期", true); save.setOnClickListener(view -> saveSchedule()); plan.addView(save);
-        plan.addView(Ui.text(this, "限制期间没有临时解除入口，计划只能在限制时段以外修改。", 12, Ui.MUTED));
+        dayScroll.addView(weekdays); plan.addView(dayScroll);
+        save = Ui.button(this, "保存计划", true); save.setOnClickListener(view -> saveSchedule()); plan.addView(save);
         page.addView(plan);
 
         LinearLayout setup = Ui.card(this, Color.WHITE);
-        setup.addView(Ui.title(this, "首次使用 · 本机检查"));
-        setup.addView(Ui.text(this, "针对荣耀 MagicOS 10 / Android 16 设计；电话和闹钟仍需在本机实测。", 12, Ui.MUTED));
-        capabilities = Ui.text(this, "", 13, Ui.ACCENT); setup.addView(capabilities);
+        LinearLayout setupHeader = row(); setupHeader.setGravity(Gravity.CENTER_VERTICAL);
+        setupHeader.setMinimumHeight(Ui.dp(this, 56));
+        LinearLayout setupLabels = Ui.column(this);
+        setupLabels.addView(Ui.title(this, "本机检查"));
+        setupSummary = Ui.text(this, "完成 3 步，即可开启", 12, Ui.MUTED); setupLabels.addView(setupSummary);
+        setupHeader.addView(setupLabels, new LinearLayout.LayoutParams(0, -2, 1));
+        TextView disclosure = Ui.text(this, "展开  ﹀", 12, Ui.ACCENT);
+        disclosure.setGravity(Gravity.END | Gravity.CENTER_VERTICAL); setupHeader.addView(disclosure, new LinearLayout.LayoutParams(-2, -2));
+        LinearLayout details = Ui.column(this); details.setVisibility(View.GONE);
+        setupHeader.setBackground(new android.graphics.drawable.RippleDrawable(android.content.res.ColorStateList.valueOf(0x14276555), null, Ui.background(Color.WHITE, this, 8)));
+        setupHeader.setFocusable(true); setupHeader.setContentDescription("本机检查，展开");
+        setupHeader.setOnClickListener(view -> {
+            boolean expand = details.getVisibility() != View.VISIBLE;
+            details.setVisibility(expand ? View.VISIBLE : View.GONE);
+            disclosure.setText(expand ? "收起  ⌃" : "展开  ﹀");
+            setupHeader.setContentDescription(expand ? "本机检查，收起" : "本机检查，展开");
+        });
+        setup.addView(setupHeader);
+        details.addView(Ui.text(this, "首次使用时，确认电话与闹钟在这台手机上正常工作。", 12, Ui.MUTED));
+        capabilities = Ui.text(this, "", 12, Ui.ACCENT); details.addView(capabilities);
         permissions = Ui.button(this, "1. 了解并开启无障碍服务", false);
-        permissions.setOnClickListener(view -> disclose()); setup.addView(permissions);
+        permissions.setOnClickListener(view -> disclose()); details.addView(permissions);
         Button clock = Ui.button(this, "先打开闹钟，设置试锁期间响铃", false);
-        clock.setOnClickListener(view -> open(allowed.clockIntent())); setup.addView(clock);
+        clock.setOnClickListener(view -> open(allowed.clockIntent())); details.addView(clock);
         trial = Ui.button(this, "2. 开始 60 秒兼容性试锁", false);
-        trial.setOnClickListener(view -> startTrial()); setup.addView(trial);
+        trial.setOnClickListener(view -> startTrial()); details.addView(trial);
         verified = new CheckBox(this);
         verified.setText("3. 已试锁，并确认来电能接听、闹钟能响铃和关闭");
         verified.setTextSize(13); verified.setPadding(0, Ui.dp(this, 12), 0, Ui.dp(this, 8));
@@ -134,18 +194,29 @@ public final class MainActivity extends Activity {
                 BoundaryScheduler.update(this); NightGuardService.refreshIfRunning(); refresh();
             }
             catch (IllegalStateException exception) { toast(exception.getMessage()); }
-        }); setup.addView(verified);
-        setup.addView(Ui.text(this, "试锁会自动结束。请用另一部手机拨入，并让预先设置的闹钟在试锁期间响铃。确认两项正常后，再开启正式计划。", 12, Ui.MUTED));
-        page.addView(setup);
+        }); details.addView(verified);
+        details.addView(Ui.text(this, "试锁在 60 秒后自动结束。请用另一部手机拨入，并提前设置试锁期间响铃的闹钟；亲自确认两项正常后，再启用计划。", 12, Ui.MUTED));
+        details.addView(Ui.text(this, "使用须知", 14, Ui.INK));
+        details.addView(Ui.text(this, "按本地时间执行，跨午夜时归属开始的星期。限制期间无法在 App 内临时解除或修改计划，到结束时间自动恢复。", 12, Ui.MUTED));
+        details.addView(Ui.text(this, "不修改音量、勿扰或锁屏密码。普通 App 可在系统中停用或卸载；重启、强行停止及 MagicOS 后台管理可能影响拦截。", 12, Ui.MUTED));
+        setup.addView(details); page.addView(setup);
+        error = Ui.text(this, "", 12, Ui.ACCENT); page.addView(error);
+        TextView footnote = Ui.text(this, "电话与闹钟照常保留\n仅存本机 · 无需联网", 12, Ui.MUTED);
+        footnote.setGravity(Gravity.CENTER); footnote.setPadding(0, Ui.dp(this, 4), 0, Ui.dp(this, 8)); page.addView(footnote);
+        scroll.addView(page); setContentView(scroll); scroll.requestApplyInsets();
+    }
 
-        LinearLayout facts = Ui.card(this, 0xFFE9EDE5);
-        facts.addView(Ui.title(this, "保留需要的，停下其余的"));
-        facts.addView(Ui.text(this, "电话、闹钟和系统紧急呼叫保留；不修改音量、勿扰或系统锁屏密码。到结束时间自动恢复。", 13, Ui.INK));
-        facts.addView(Ui.text(this, "机主仍可在 Android 系统中停用或卸载普通应用。重启、强行停止和 MagicOS 后台管理可能影响拦截，请按本机测试结果使用。", 12, Ui.MUTED));
-        error = Ui.text(this, "", 12, Ui.ACCENT); facts.addView(error);
-        page.addView(facts);
-        page.addView(Ui.text(this, "仅保存在本机 · 不联网 · 不读取屏幕文字或输入", 11, Ui.MUTED));
-        scroll.addView(page); setContentView(scroll); page.requestApplyInsets();
+    private LinearLayout row() {
+        LinearLayout view = new LinearLayout(this); view.setOrientation(LinearLayout.HORIZONTAL); return view;
+    }
+
+    private TextView addTimeColumn(LinearLayout parent, String label, TextView time) {
+        LinearLayout column = Ui.column(this);
+        TextView caption = Ui.text(this, label, 11, Ui.PALE);
+        column.addView(caption); column.addView(time);
+        parent.addView(column, parent.getOrientation() == LinearLayout.HORIZONTAL
+                ? new LinearLayout.LayoutParams(0, -2, 1) : new LinearLayout.LayoutParams(-1, -2));
+        return caption;
     }
 
     private void chooseTime(boolean beginning) {
@@ -215,7 +286,7 @@ public final class MainActivity extends Activity {
     private void disclose() {
         if (configurationLocked()) return;
         new AlertDialog.Builder(this).setTitle("无障碍服务用途与访问范围")
-                .setMessage("为了在夜间拦截普通应用、放行电话和闹钟，本应用需要你手动开启无障碍服务。\n\n系统会授予窗口访问能力；代码仅检查应用包名，不读取或保存屏幕文字、描述、输入或按键，不联网。\n\n本功能不是面向残障人士的辅助工具。系统仍允许停用或卸载普通 App，无法保证绝对不可绕过。\n\n同意后将打开系统设置，请自行选择“收工助手 · 夜间使用限制”；此操作不会自动开启夜间计划。")
+                .setMessage("为了在夜间拦截普通应用、放行电话和闹钟，本应用需要你手动开启无障碍服务。\n\n系统会授予窗口访问能力；代码仅检查应用包名及系统提供的来电、闹铃播放状态，不读取或保存屏幕文字、描述、输入或按键，不录音，不联网。\n\n本功能不是面向残障人士的辅助工具。系统仍允许停用或卸载普通 App，无法保证绝对不可绕过。\n\n同意后将打开系统设置，请自行选择“收工助手 · 夜间使用限制”；此操作不会自动开启夜间计划。")
                 .setNegativeButton("暂不开启", null).setPositiveButton("了解并前往设置", (dialog, which) -> {
                     try { store.acceptDisclosure(); open(new Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS)); }
                     catch (RuntimeException error) { toast(error.getMessage()); }
@@ -252,12 +323,14 @@ public final class MainActivity extends Activity {
         binding = true;
         enabled.setChecked(schedule.enabled); verified.setChecked(store.compatibilityConfirmed());
         binding = false;
-        period.setText(getString(R.string.time_period, NightSchedule.formatMinute(schedule.startMinute), NightSchedule.formatMinute(schedule.endMinute)));
+        period.setText(NightSchedule.formatMinute(schedule.startMinute));
+        morning.setText(NightSchedule.formatMinute(schedule.endMinute));
+        morningLabel.setText(schedule.endMinute < schedule.startMinute ? "次日恢复" : "恢复使用");
         if (store.isTrialActive(now.toEpochMilli())) {
             status.setText("兼容性试锁中");
             countdown.setText(getString(R.string.trial_seconds, Math.max(0, (store.trialUntil() - now.toEpochMilli()) / 1000)));
         } else if (!schedule.enabled) {
-            status.setText("计划未启用"); countdown.setText("完成本机检查后，再主动开启。");
+            status.setText("计划未启用"); countdown.setText(store.compatibilityConfirmed() ? "开启夜间计划，让休息准时开始。" : "完成本机检查后，即可开启。");
         } else if (!connected || !allowed.ready()) {
             status.setText("计划已保存 · 拦截未就绪");
             countdown.setText(!connected ? "无障碍服务未连接，普通应用目前无法被拦截。" : "电话或闹钟组件未就绪。");
@@ -272,7 +345,10 @@ public final class MainActivity extends Activity {
         }
         capabilities.setText(getString(R.string.detected_apps, connected ? "● 无障碍服务已连接" : "○ 无障碍服务未连接",
                 allowed.phones.size(), allowed.clocks.size()));
+        setupSummary.setText(!connected ? "待完成 · 开启服务与兼容性试锁" : !store.trialCompleted()
+                ? "待完成 · 60 秒兼容性试锁" : !store.compatibilityConfirmed() ? "待完成 · 确认电话与闹钟兼容" : "已完成 · 电话与闹钟兼容性已确认");
         error.setText(store.lastError());
+        error.setVisibility(store.lastError().isEmpty() ? View.GONE : View.VISIBLE);
         for (View control : new View[] { start, end, save, enabled, permissions, verified }) control.setEnabled(!locked);
         for (ToggleButton day : days) day.setEnabled(!locked);
         trial.setEnabled(!locked && connected && allowed.ready());

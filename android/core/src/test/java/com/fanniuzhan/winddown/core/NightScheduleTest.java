@@ -97,6 +97,10 @@ public final class NightScheduleTest {
         test("system lock screen remains under Android control", () -> check(!cover(true, true, false, "com.android.systemui")));
         test("ringing temporarily yields for call answering", () -> check(!cover(true, false, true, "com.android.systemui")));
         test("ordinary app is blocked again after ringing stops", () -> check(cover(true, false, false, "com.example.social")));
+        test("notification-only alarm yields even with an ordinary app underneath", () ->
+                check(!GuardPolicy.shouldCover(true, false, false, true, "com.example.social", PHONES, CLOCKS)));
+        test("ordinary app is covered again after alarm audio stops", () ->
+                check(GuardPolicy.shouldCover(true, false, false, false, "com.example.social", PHONES, CLOCKS)));
         test("unknown app cannot accidentally receive an exemption", () -> check(cover(true, false, false, null)));
         test("similar package names cannot spoof a call or clock exemption", () -> {
             check(cover(true, false, false, "com.hihonor.incallui.fake"));
@@ -109,7 +113,7 @@ public final class NightScheduleTest {
     }
 
     private static boolean cover(boolean restricted, boolean locked, boolean ringing, String owner) {
-        return GuardPolicy.shouldCover(restricted, locked, ringing, owner, PHONES, CLOCKS);
+        return GuardPolicy.shouldCover(restricted, locked, ringing, false, owner, PHONES, CLOCKS);
     }
     private static NightSchedule plan() { return new NightSchedule(true, 1350, 390, 127); }
     private static Instant at(String value) { return java.time.OffsetDateTime.parse(value).toInstant(); }
