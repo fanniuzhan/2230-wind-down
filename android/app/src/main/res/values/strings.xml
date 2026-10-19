@@ -1,0 +1,9 @@
+<resources>
+    <string name="start_time">开始  %1$s</string>
+    <string name="end_time">结束  %1$s</string>
+    <string name="time_period">%1$s → %2$s</string>
+    <string name="trial_seconds">%1$d 秒后结束试锁</string>
+    <string name="next_start">下次开始：%1$s</string>
+    <string name="detected_apps">%1$s\n已识别电话组件 %2$d 个，闹钟组件 %3$d 个</string>
+    <string name="accessibility_description">在设定夜间时段覆盖普通应用，电话和闹钟界面放行。使用无障碍窗口访问能力仅识别前台应用包名，不读取或保存屏幕文字，不记录输入，不联网。夜间没有 App 内临时解除入口；白天可修改计划。系统仍允许停用或卸载本应用。启用前请先完成 60 秒电话和闹钟兼容性试锁。</string>
+</resources>

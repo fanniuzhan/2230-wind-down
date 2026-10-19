@@ -12,3 +12,9 @@ TestResults/
 *.pfx
 *.snk
 .DS_Store
+**/.gradle/
+**/.kotlin/
+android/**/build/
+android/local.properties
+*.jks
+*.keystore
