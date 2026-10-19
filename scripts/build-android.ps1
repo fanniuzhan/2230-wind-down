@@ -22,3 +22,4 @@ $apkHash | Format-List
 ($apkHash.Hash.ToLowerInvariant() + '  ' + (Split-Path -Leaf $destination)) | Set-Content -LiteralPath ($destination + '.sha256') -Encoding ASCII
 Copy-Item -LiteralPath (Join-Path $projectRoot 'android\README.md') -Destination (Join-Path $projectRoot 'artifacts\Android-使用说明.md') -Force
 Write-Output $destination
+& (Join-Path $PSScriptRoot 'package-android.ps1')
