@@ -12,19 +12,21 @@ import java.util.Collections;
 import java.util.List;
 import java.util.concurrent.atomic.AtomicInteger;
 
-/** Dedicated-emulator regression. Opens Clock but never starts a trial or creates an alarm. */
+/** Dedicated-emulator regressions; recovery modes are opt-in, and no mode creates alarms. */
 public final class ClockLaunchInstrumentation extends Instrumentation {
     private int passed;
     private boolean screenRecovery;
+    private boolean formalRecovery;
 
     @Override public void onCreate(Bundle arguments) {
         super.onCreate(arguments);
         screenRecovery = arguments != null && "true".equals(arguments.getString("screen_recovery"));
+        formalRecovery = arguments != null && "true".equals(arguments.getString("formal_recovery"));
         start();
     }
 
     @Override public void onStart() {
-        if (screenRecovery) { ScreenRecoveryChecks.run(this); return; }
+        if (screenRecovery || formalRecovery) { ScreenRecoveryChecks.run(this, formalRecovery); return; }
         Bundle result = new Bundle();
         try {
             Context context = getTargetContext();

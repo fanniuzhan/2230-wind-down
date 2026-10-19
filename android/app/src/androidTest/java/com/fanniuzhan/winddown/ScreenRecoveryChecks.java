@@ -11,25 +11,29 @@ import android.os.ParcelFileDescriptor;
 import android.os.PowerManager;
 import android.view.View;
 import android.view.WindowManager;
+import com.fanniuzhan.winddown.core.NightSchedule;
 import java.io.ByteArrayOutputStream;
 import java.io.FileInputStream;
 import java.lang.ref.WeakReference;
 import java.lang.reflect.Field;
 import java.nio.charset.StandardCharsets;
 import java.util.Map;
+import java.time.Instant;
+import java.time.ZoneId;
+import java.time.ZonedDateTime;
 import java.util.function.BooleanSupplier;
 
-/** Exercises real WindowManager detachment and screen cycles without enabling a formal schedule. */
+/** Dedicated-emulator checks. Both modes restore every preference they may change before finishing. */
 final class ScreenRecoveryChecks {
     private static int passed;
 
-    static void run(Instrumentation test) {
+    static void run(Instrumentation test, boolean formal) {
         passed = 0;
         Bundle result = new Bundle();
         Context context = test.getTargetContext();
         SharedPreferences preferences = context.getSharedPreferences("night_guard", Context.MODE_PRIVATE);
         Map<String, ?> original = preferences.getAll();
-        boolean trialBegan = false;
+        boolean stateChanged = false;
         boolean success = false;
         try {
             if (preferences.getBoolean("enabled", false) || preferences.getBoolean("compatibility", false)
@@ -52,9 +56,21 @@ final class ScreenRecoveryChecks {
             shell(automation, "wm dismiss-keyguard");
             shell(automation, "input keyevent KEYCODE_HOME");
             SettingsStore store = new SettingsStore(context);
-            store.beginTrial(System.currentTimeMillis()); trialBegan = true;
+            stateChanged = true;
+            if (formal) {
+                ZonedDateTime now = ZonedDateTime.now();
+                int minute = now.getHour() * 60 + now.getMinute();
+                store.acceptDisclosure();
+                store.confirmCompatibility(true);
+                store.save(new NightSchedule(true, (minute + 1439) % 1440, (minute + 10) % 1440, 127));
+                if (!preferences.edit().putLong("trial_until", 0).commit())
+                    throw new IllegalStateException("Cannot clear test trial state");
+            } else store.beginTrial(System.currentTimeMillis());
             NightGuardService.refreshIfRunning();
-            await(() -> attached(test), "Initial trial overlay is visible");
+            await(() -> attached(test), "Initial " + (formal ? "formal" : "trial") + " overlay is visible");
+            if (formal) await(() -> store.schedule().enabled && store.trialUntil() == 0
+                    && store.schedule().activeWindow(Instant.now(), ZoneId.systemDefault()) != null,
+                    "Formal plan is active with no trial");
 
             // Reproduce a window removed by the system while the service's Java reference survives.
             test.runOnMainSync(() -> {
@@ -68,18 +84,42 @@ final class ScreenRecoveryChecks {
             await(() -> attached(test), "Invisible overlay is recreated");
 
             PowerManager power = context.getSystemService(PowerManager.class);
-            for (int cycle = 1; cycle <= 2; cycle++) {
+            int cycles = formal ? 3 : 2;
+            for (int cycle = 1; cycle <= cycles; cycle++) {
                 shell(automation, "input keyevent KEYCODE_SLEEP");
                 await(() -> !power.isInteractive() && !attached(test), "Screen off yields to system lock (cycle " + cycle + ")");
+                if (formal) Thread.sleep(cycle == 3 ? 70_000L : cycle * 2000L);
                 shell(automation, "input keyevent KEYCODE_WAKEUP");
                 shell(automation, "wm dismiss-keyguard");
                 shell(automation, "input keyevent KEYCODE_HOME");
                 await(() -> power.isInteractive() && attached(test), "Unlock restores overlay (cycle " + cycle + ")");
+                if (formal) {
+                    // Ordinary app navigation must stay restricted without reopening MainActivity.
+                    shell(automation, "am start -a android.settings.SETTINGS");
+                    Thread.sleep(1500L);
+                    await(() -> attached(test), "Ordinary Settings app stays covered (cycle " + cycle + ")");
+                }
             }
             test.runOnMainSync(() -> service().onInterrupt());
             await(() -> attached(test), "Service interrupt does not permanently remove an active restriction");
-            if (preferences.getBoolean("enabled", false)) throw new AssertionError("Formal schedule was enabled");
-            result.putString("stream", "PASS: " + passed + " screen recovery checks; formal schedule disabled.\n");
+            if (formal) {
+                shell(automation, "screencap -p /sdcard/winddown-formal-restored.png");
+                ZonedDateTime now = ZonedDateTime.now();
+                int minute = now.getHour() * 60 + now.getMinute();
+                store.save(new NightSchedule(true, (minute + 1439) % 1440, (minute + 1) % 1440, 127));
+                NightGuardService.refreshIfRunning();
+                await(() -> attached(test), "Formal plan stays covered before its real end time");
+                Instant end = store.schedule().activeWindow(Instant.now(), ZoneId.systemDefault()).end;
+                shell(automation, "input keyevent KEYCODE_SLEEP");
+                while (Instant.now().isBefore(end.plusSeconds(2))) Thread.sleep(250L);
+                shell(automation, "input keyevent KEYCODE_WAKEUP");
+                shell(automation, "wm dismiss-keyguard");
+                shell(automation, "input keyevent KEYCODE_HOME");
+                await(() -> power.isInteractive() && !attached(test), "Expired formal window is not resumed after unlock");
+                if (!preferences.getBoolean("enabled", false) || store.trialUntil() != 0)
+                    throw new AssertionError("Formal test silently switched to a trial or disabled the schedule");
+            } else if (preferences.getBoolean("enabled", false)) throw new AssertionError("Formal schedule was enabled");
+            result.putString("stream", "PASS: " + passed + (formal ? " formal-plan" : " trial") + " screen recovery checks.\n");
             success = true;
         } catch (Throwable error) {
             result.putString("stream", "FAIL after " + passed + " screen recovery checks: " + error
@@ -87,18 +127,22 @@ final class ScreenRecoveryChecks {
                     + "; keyguard=" + context.getSystemService(KeyguardManager.class).isKeyguardLocked()
                     + "; error=" + new SettingsStore(context).lastError() + "\n");
         } finally {
-            if (trialBegan) {
+            if (stateChanged) {
                 SharedPreferences.Editor restore = preferences.edit();
-                for (String key : new String[] { "trial_until", "trial_completed", "compatibility", "enabled" }) {
+                for (String key : new String[] { "trial_until", "trial_completed", "compatibility", "enabled",
+                        "start", "end", "days", "disclosure", "last_error" }) {
                     Object value = original.get(key);
                     if (value instanceof Boolean) restore.putBoolean(key, (Boolean) value);
                     else if (value instanceof Long) restore.putLong(key, (Long) value);
+                    else if (value instanceof Integer) restore.putInt(key, (Integer) value);
+                    else if (value instanceof String) restore.putString(key, (String) value);
                     else restore.remove(key);
                 }
                 if (!restore.commit()) {
                     success = false;
-                    result.putString("stream", "FAIL: could not restore emulator trial state\n");
+                    result.putString("stream", "FAIL: could not restore emulator state\n");
                 }
+                BoundaryScheduler.update(context);
                 NightGuardService.refreshIfRunning();
             }
         }
