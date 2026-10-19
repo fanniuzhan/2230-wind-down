@@ -78,28 +78,30 @@ public final class MainActivity extends Activity {
             view.setPadding(insets.getSystemWindowInsetLeft(), insets.getSystemWindowInsetTop(),
                     insets.getSystemWindowInsetRight(), insets.getSystemWindowInsetBottom()); return insets;
         });
-        TextView brand = Ui.text(this, "收工助手  /  WIND-DOWN", 11, Ui.ACCENT);
-        brand.setLetterSpacing(.12f); page.addView(brand);
-        TextView title = Ui.title(this, "把夜晚，还给休息。"); title.setTextSize(27); page.addView(title);
-        TextView subtitle = Ui.text(this, "放下手机，留一点时间给自己。", 13, Ui.MUTED);
+        TextView brand = Ui.text(this, "WIND-DOWN   /   夜间手记", 11, Ui.ACCENT);
+        brand.setLetterSpacing(.14f); page.addView(brand);
+        TextView title = Ui.title(this, "把夜晚，还给自己。"); title.setTextSize(28);
+        title.setTypeface(Typeface.create("serif", Typeface.NORMAL)); page.addView(title);
+        TextView subtitle = Ui.text(this, "在一天的尽头，慢慢安静下来。", 13, Ui.MUTED);
         subtitle.setPadding(0, 0, 0, Ui.dp(this, 14)); page.addView(subtitle);
 
         LinearLayout hero = Ui.card(this, Ui.DARK);
+        hero.setBackground(Ui.nightScene(this));
         LinearLayout heroTop = row(); heroTop.setGravity(Gravity.CENTER_VERTICAL);
-        TextView nightLabel = Ui.text(this, "你的休息时段", 12, Ui.PALE);
+        heroTop.setMinimumHeight(Ui.dp(this, 58));
+        TextView nightLabel = Ui.text(this, "一段留给休息的时间", 12, Ui.PALE);
         heroTop.addView(nightLabel, new LinearLayout.LayoutParams(0, -2, 1));
-        heroTop.addView(Ui.moon(this), new LinearLayout.LayoutParams(Ui.dp(this, 48), Ui.dp(this, 48)));
         hero.addView(heroTop);
         LinearLayout times = row();
         times.setGravity(Gravity.CENTER_VERTICAL);
         if (getResources().getConfiguration().fontScale > 1.3f) times.setOrientation(LinearLayout.VERTICAL);
         period = Ui.text(this, "22:30", 36, Color.WHITE);
         morning = Ui.text(this, "06:30", 36, Color.WHITE);
-        period.setTypeface(Typeface.create("sans-serif-light", Typeface.NORMAL));
-        morning.setTypeface(Typeface.create("sans-serif-light", Typeface.NORMAL));
+        period.setTypeface(Typeface.create("serif", Typeface.NORMAL));
+        morning.setTypeface(Typeface.create("serif", Typeface.NORMAL));
         addTimeColumn(times, "开始休息", period);
         if (times.getOrientation() == LinearLayout.HORIZONTAL) {
-            TextView arrow = Ui.text(this, "—", 18, Ui.PALE); arrow.setGravity(Gravity.CENTER);
+            TextView arrow = Ui.text(this, "·", 18, Ui.GOLD); arrow.setGravity(Gravity.CENTER);
             arrow.setPadding(0, Ui.dp(this, 20), 0, 0);
             times.addView(arrow, new LinearLayout.LayoutParams(Ui.dp(this, 30), -2));
         }
@@ -112,7 +114,7 @@ public final class MainActivity extends Activity {
         countdown = Ui.text(this, "完成本机检查后，即可开启。", 12, Ui.PALE); hero.addView(countdown);
         page.addView(hero);
 
-        LinearLayout plan = Ui.card(this, Color.WHITE);
+        LinearLayout plan = Ui.card(this, Ui.PAPER);
         int planPadding = Ui.dp(this, 16); plan.setPadding(planPadding, planPadding, planPadding, planPadding);
         enabled = new Switch(this); enabled.setText("夜间计划"); enabled.setTextSize(17); enabled.setTextColor(Ui.INK);
         enabled.setTypeface(null, Typeface.BOLD); enabled.setMinHeight(Ui.dp(this, 48));
@@ -153,7 +155,7 @@ public final class MainActivity extends Activity {
         save = Ui.button(this, "保存计划", true); save.setOnClickListener(view -> saveSchedule()); plan.addView(save);
         page.addView(plan);
 
-        LinearLayout setup = Ui.card(this, Color.WHITE);
+        LinearLayout setup = Ui.card(this, Ui.PAPER);
         LinearLayout setupHeader = row(); setupHeader.setGravity(Gravity.CENTER_VERTICAL);
         setupHeader.setMinimumHeight(Ui.dp(this, 56));
         LinearLayout setupLabels = Ui.column(this);
@@ -172,17 +174,22 @@ public final class MainActivity extends Activity {
             setupHeader.setContentDescription(expand ? "本机检查，收起" : "本机检查，展开");
         });
         setup.addView(setupHeader);
-        details.addView(Ui.text(this, "首次使用时，确认电话与闹钟在这台手机上正常工作。", 12, Ui.MUTED));
-        capabilities = Ui.text(this, "", 12, Ui.ACCENT); details.addView(capabilities);
-        permissions = Ui.button(this, "1. 了解并开启无障碍服务", false);
-        permissions.setOnClickListener(view -> disclose()); details.addView(permissions);
-        Button clock = Ui.button(this, "先打开闹钟，设置试锁期间响铃", false);
-        clock.setOnClickListener(view -> open(allowed.clockIntent())); details.addView(clock);
-        trial = Ui.button(this, "2. 开始 60 秒兼容性试锁", false);
-        trial.setOnClickListener(view -> startTrial()); details.addView(trial);
+        TextView introduction = Ui.text(this, "只需三步，确认这台手机能安心收工。", 12, Ui.MUTED);
+        introduction.setPadding(0, Ui.dp(this, 12), 0, Ui.dp(this, 8)); details.addView(introduction);
+        LinearLayout permissionStep = Ui.step(this, "01", "开启服务", "授权后，才能在夜间覆盖普通应用。");
+        capabilities = Ui.text(this, "", 12, Ui.ACCENT); permissionStep.addView(capabilities);
+        permissions = Ui.button(this, "开启无障碍服务", true);
+        permissions.setOnClickListener(view -> disclose()); permissionStep.addView(permissions);
+        details.addView(permissionStep);
+        LinearLayout trialStep = Ui.step(this, "02", "试试电话与闹钟", "准备另一部手机来电，并设一个即将响铃的闹钟。试锁会在 60 秒后自动结束。");
+        trial = Ui.button(this, "准备 60 秒试锁", true);
+        trial.setOnClickListener(view -> startTrial()); trialStep.addView(trial); details.addView(trialStep);
+        LinearLayout confirmStep = Ui.step(this, "03", "确认结果", "试锁结束后，亲自确认：电话可接听，闹钟能响铃并关闭。确认后即可开启夜间计划。");
         verified = new CheckBox(this);
-        verified.setText("3. 已试锁，并确认来电能接听、闹钟能响铃和关闭");
-        verified.setTextSize(13); verified.setPadding(0, Ui.dp(this, 12), 0, Ui.dp(this, 8));
+        verified.setText("我已确认来电与闹钟正常");
+        verified.setTextColor(Ui.INK); verified.setTextSize(13); verified.setMinHeight(Ui.dp(this, 52));
+        verified.setPadding(Ui.dp(this, 8), Ui.dp(this, 12), Ui.dp(this, 8), Ui.dp(this, 12));
+        verified.setBackground(Ui.background(Ui.SOFT, this, 12));
         verified.setOnCheckedChangeListener((button, checked) -> {
             if (binding) return;
             if (!store.trialCompleted()) {
@@ -194,16 +201,16 @@ public final class MainActivity extends Activity {
                 BoundaryScheduler.update(this); NightGuardService.refreshIfRunning(); refresh();
             }
             catch (IllegalStateException exception) { toast(exception.getMessage()); }
-        }); details.addView(verified);
-        details.addView(Ui.text(this, "试锁在 60 秒后自动结束。请用另一部手机拨入，并提前设置试锁期间响铃的闹钟；亲自确认两项正常后，再启用计划。", 12, Ui.MUTED));
+        }); confirmStep.addView(verified); details.addView(confirmStep);
         details.addView(Ui.text(this, "使用须知", 14, Ui.INK));
         details.addView(Ui.text(this, "按本地时间执行，跨午夜时归属开始的星期。限制期间无法在 App 内临时解除或修改计划，到结束时间自动恢复。", 12, Ui.MUTED));
         details.addView(Ui.text(this, "不修改音量、勿扰或锁屏密码。普通 App 可在系统中停用或卸载；重启、强行停止及 MagicOS 后台管理可能影响拦截。", 12, Ui.MUTED));
         setup.addView(details); page.addView(setup);
         error = Ui.text(this, "", 12, Ui.ACCENT); page.addView(error);
-        TextView footnote = Ui.text(this, "电话与闹钟照常保留\n仅存本机 · 无需联网", 12, Ui.MUTED);
+        TextView footnote = Ui.text(this, "晚安，明天见。\n仅存本机 · 无需联网", 12, Ui.MUTED);
         footnote.setGravity(Gravity.CENTER); footnote.setPadding(0, Ui.dp(this, 4), 0, Ui.dp(this, 8)); page.addView(footnote);
         scroll.addView(page); setContentView(scroll); scroll.requestApplyInsets();
+        scroll.post(() -> scroll.scrollTo(0, 0));
     }
 
     private LinearLayout row() {
@@ -222,11 +229,14 @@ public final class MainActivity extends Activity {
     private void chooseTime(boolean beginning) {
         if (configurationLocked()) return;
         int value = beginning ? startMinute : endMinute;
-        new TimePickerDialog(this, (picker, hour, minute) -> {
+        TimePickerDialog dialog = new TimePickerDialog(this, (picker, hour, minute) -> {
             if (configurationLocked()) return;
             if (beginning) { startMinute = hour * 60 + minute; start.setText(getString(R.string.start_time, NightSchedule.formatMinute(startMinute))); }
             else { endMinute = hour * 60 + minute; end.setText(getString(R.string.end_time, NightSchedule.formatMinute(endMinute))); }
-        }, value / 60, value % 60, true).show();
+        }, value / 60, value % 60, true);
+        dialog.show();
+        dialog.getButton(AlertDialog.BUTTON_POSITIVE).setText("确定");
+        dialog.getButton(AlertDialog.BUTTON_NEGATIVE).setText("取消");
     }
 
     private NightSchedule edited(boolean enable) {
@@ -298,8 +308,19 @@ public final class MainActivity extends Activity {
         if (!store.disclosureAccepted() || !NightGuardService.connected()) { toast("请先了解并手动开启无障碍服务。"); return; }
         allowed = new AllowedApps(this);
         if (!allowed.ready()) { toast("没有识别到电话或系统闹钟，暂不试锁。"); return; }
-        new AlertDialog.Builder(this).setTitle("准备好进行 60 秒试锁？")
-                .setMessage("先设置一分钟内响铃的闹钟，并准备让另一部手机拨入。试锁中可打开电话、闹钟和系统紧急呼叫；其他应用会被覆盖。60 秒后自动结束。\n\n试锁会关闭原有正式计划，确认兼容后需重新启用。试锁不能代替你亲自确认接听、响铃和关闭闹钟是否正常。")
+        LinearLayout preparation = Ui.column(this);
+        int padding = Ui.dp(this, 24); preparation.setPadding(padding, Ui.dp(this, 8), padding, 0);
+        preparation.addView(Ui.text(this, "闹钟 · 约一分钟后响铃", 15, Ui.INK));
+        preparation.addView(Ui.text(this, "先设置好闹钟，再回来开始试锁。", 12, Ui.MUTED));
+        Button clock = Ui.button(this, "打开系统闹钟", false);
+        clock.setOnClickListener(view -> open(allowed.clockIntent())); preparation.addView(clock);
+        TextView phone = Ui.text(this, "来电 · 准备另一部手机", 15, Ui.INK);
+        phone.setPadding(0, Ui.dp(this, 20), 0, 0); preparation.addView(phone);
+        preparation.addView(Ui.text(this, "让对方在试锁期间拨入，检查接听与挂断。", 12, Ui.MUTED));
+        preparation.addView(Ui.text(this, "试锁 60 秒后自动结束。电话、闹钟和紧急呼叫保留，其余应用被覆盖；原有正式计划会关闭，确认兼容后需重新启用。", 12, Ui.MUTED));
+        ScrollView preparationScroll = new ScrollView(this); preparationScroll.addView(preparation);
+        new AlertDialog.Builder(this).setTitle("先准备，再试锁")
+                .setView(preparationScroll)
                 .setNegativeButton("还没准备好", null).setPositiveButton("开始试锁", (dialog, which) -> {
                     if (configurationLocked()) return;
                     try { store.beginTrial(System.currentTimeMillis()); BoundaryScheduler.update(this); NightGuardService.refreshIfRunning(); refresh(); }

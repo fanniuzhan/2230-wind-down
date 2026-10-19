@@ -115,7 +115,7 @@ def test_alarm():
     try:
         # SINGLE_TOP preserves the expanded checks when returning from Clock.
         adb('shell', 'am', 'start', '-W', '-f', '0x34000000', '-n', PACKAGE + '/.MainActivity')
-        tap('2. 开始 60 秒兼容性试锁', scroll=True)
+        tap('准备 60 秒试锁', scroll=True)
         print(f'Preparing trial for emulator alarm at {target // 60:02d}:{target % 60:02d}...', flush=True)
         # Slow UI automation must not consume the remaining minute before the alarm.
         # Open the confirmation first, then start the 60-second trial near the alarm.
@@ -168,7 +168,7 @@ def test_layout():
         capture('09-large-font-time-picker')
         adb('shell', 'input', 'keyevent', 'KEYCODE_BACK')
         open_checks()
-        tap('1. 了解并开启无障碍服务', scroll=True)
+        tap('开启无障碍服务', scroll=True)
         capture('10-large-font-disclosure')
         adb('shell', 'input', 'keyevent', 'KEYCODE_BACK')
         print('PASS large-font layout opens time picker and expanded checks on a 360 dp screen', flush=True)
@@ -208,7 +208,7 @@ def main():
     print('PASS first launch is disabled', flush=True)
     capture('01-main-disabled')
     open_checks()
-    tap('1. 了解并开启无障碍服务', scroll=True)
+    tap('开启无障碍服务', scroll=True)
     tap('了解并前往设置')
     adb('shell', 'settings', 'put', 'secure', 'enabled_accessibility_services',
         ':'.join(others + [service]))
@@ -216,7 +216,7 @@ def main():
     time.sleep(2)
     adb('shell', 'am', 'start', '-W', '-f', '0x14000000', '-n', PACKAGE + '/.MainActivity')
     open_checks()
-    tap('2. 开始 60 秒兼容性试锁', scroll=True)
+    tap('准备 60 秒试锁', scroll=True)
     tap('开始试锁')
     trial_started = time.monotonic()
     expect_cover(True, 'trial covers ordinary application')
