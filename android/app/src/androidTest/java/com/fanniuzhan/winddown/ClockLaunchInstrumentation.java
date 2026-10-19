@@ -15,10 +15,16 @@ import java.util.concurrent.atomic.AtomicInteger;
 /** Dedicated-emulator regression. Opens Clock but never starts a trial or creates an alarm. */
 public final class ClockLaunchInstrumentation extends Instrumentation {
     private int passed;
+    private boolean screenRecovery;
 
-    @Override public void onCreate(Bundle arguments) { super.onCreate(arguments); start(); }
+    @Override public void onCreate(Bundle arguments) {
+        super.onCreate(arguments);
+        screenRecovery = arguments != null && "true".equals(arguments.getString("screen_recovery"));
+        start();
+    }
 
     @Override public void onStart() {
+        if (screenRecovery) { ScreenRecoveryChecks.run(this); return; }
         Bundle result = new Bundle();
         try {
             Context context = getTargetContext();

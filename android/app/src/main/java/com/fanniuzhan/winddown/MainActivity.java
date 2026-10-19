@@ -319,7 +319,7 @@ public final class MainActivity extends Activity {
         TextView phone = Ui.text(this, "来电 · 准备另一部手机", 15, Ui.INK);
         phone.setPadding(0, Ui.dp(this, 20), 0, 0); preparation.addView(phone);
         preparation.addView(Ui.text(this, "让对方在试锁期间拨入，检查接听与挂断。", 12, Ui.MUTED));
-        preparation.addView(Ui.text(this, "试锁 60 秒后自动结束。电话、闹钟和紧急呼叫保留，其余应用被覆盖；原有正式计划会关闭，确认兼容后需重新启用。", 12, Ui.MUTED));
+        preparation.addView(Ui.text(this, "60 秒仅做测试，熄屏期间也计时，不会开启整晚计划。电话、闹钟和紧急呼叫保留，其余应用被覆盖；原有正式计划会关闭，确认兼容后需重新启用。", 12, Ui.MUTED));
         ScrollView preparationScroll = new ScrollView(this); preparationScroll.addView(preparation);
         new AlertDialog.Builder(this).setTitle("先准备，再试锁")
                 .setView(preparationScroll)
@@ -353,7 +353,9 @@ public final class MainActivity extends Activity {
             status.setText("兼容性试锁中");
             countdown.setText(getString(R.string.trial_seconds, Math.max(0, (store.trialUntil() - now.toEpochMilli()) / 1000)));
         } else if (!schedule.enabled) {
-            status.setText("计划未启用"); countdown.setText(store.compatibilityConfirmed() ? "开启夜间计划，让休息准时开始。" : "完成本机检查后，即可开启。");
+            status.setText("计划未启用");
+            countdown.setText(store.compatibilityConfirmed() ? "开启夜间计划，让休息准时开始。"
+                    : store.trialCompleted() ? "60 秒试锁已结束；确认兼容后，还需开启夜间计划。" : "完成本机检查后，即可开启。");
         } else if (!connected || !allowed.ready()) {
             status.setText("计划已保存 · 拦截未就绪");
             countdown.setText(!connected ? "无障碍服务未连接，普通应用目前无法被拦截。" : "电话或闹钟组件未就绪。");

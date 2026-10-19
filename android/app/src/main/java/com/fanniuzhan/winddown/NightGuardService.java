@@ -46,10 +46,23 @@ public final class NightGuardService extends AccessibilityService {
     private TextView heading;
     private String foreground;
     private long lastDiscovery;
+    private long coverAddedAt;
+    private boolean stopped;
     private boolean screenReceiverRegistered;
     private final Runnable tick = () -> evaluate(true);
+    private final Runnable wakeCheck = () -> evaluate(true);
     private final BroadcastReceiver screenReceiver = new BroadcastReceiver() {
-        @Override public void onReceive(Context context, Intent intent) { evaluate(true); }
+        @Override public void onReceive(Context context, Intent intent) {
+            foreground = null; // Do not carry a pre-lock phone/clock exemption across unlock.
+            if (Intent.ACTION_SCREEN_OFF.equals(intent.getAction())) {
+                handler.removeCallbacks(wakeCheck);
+                hideCover();
+                handler.removeCallbacks(tick);
+                handler.postDelayed(tick, 1000L);
+            } else {
+                recheckAfterWake();
+            }
+        }
     };
 
     static boolean connected() { return current.get() != null; }
@@ -60,6 +73,7 @@ public final class NightGuardService extends AccessibilityService {
 
     @Override protected void onServiceConnected() {
         super.onServiceConnected();
+        stopped = false;
         store = new SettingsStore(this);
         allowed = new AllowedApps(this);
         lastDiscovery = android.os.SystemClock.elapsedRealtime();
@@ -69,15 +83,26 @@ public final class NightGuardService extends AccessibilityService {
         IntentFilter filter = new IntentFilter();
         filter.addAction(Intent.ACTION_SCREEN_ON); filter.addAction(Intent.ACTION_SCREEN_OFF);
         filter.addAction(Intent.ACTION_USER_PRESENT);
-        if (Build.VERSION.SDK_INT >= 33) registerReceiver(screenReceiver, filter, Context.RECEIVER_NOT_EXPORTED);
-        else registerReceiver(screenReceiver, filter);
-        screenReceiverRegistered = true;
+        if (!screenReceiverRegistered) {
+            if (Build.VERSION.SDK_INT >= 33) registerReceiver(screenReceiver, filter, Context.RECEIVER_NOT_EXPORTED);
+            else registerReceiver(screenReceiver, filter);
+            screenReceiverRegistered = true;
+        }
         BoundaryScheduler.update(this);
+        recheckAfterWake();
+    }
+
+    private void recheckAfterWake() {
+        handler.removeCallbacks(wakeCheck);
+        foreground = null;
+        hideCover(); // A retained Java view is not proof the system still displays its window.
         evaluate(true);
+        // Manufacturer keyguard/window state may settle after SCREEN_ON or USER_PRESENT.
+        for (long delay : new long[] { 150L, 600L, 1500L }) handler.postDelayed(wakeCheck, delay);
     }
 
     @Override public void onAccessibilityEvent(AccessibilityEvent event) {
-        if (store == null) return;
+        if (store == null || stopped) return;
         CharSequence owner = event.getPackageName();
         if (owner != null) foreground = owner.toString();
         evaluate(false);
@@ -99,7 +124,7 @@ public final class NightGuardService extends AccessibilityService {
     }
 
     private void evaluate(boolean updateTimer) {
-        if (store == null) return;
+        if (store == null || stopped) return;
         try {
             long nowMillis = System.currentTimeMillis();
             store.finishTrialIfDue(nowMillis);
@@ -154,8 +179,22 @@ public final class NightGuardService extends AccessibilityService {
     }
 
     private void showCover(Instant until, boolean trial) {
+        if (cover != null && ((!cover.isAttachedToWindow()
+                && android.os.SystemClock.uptimeMillis() - coverAddedAt >= 500L)
+                || cover.getVisibility() != View.VISIBLE)) hideCover();
         if (cover == null) {
             ScrollView surface = new ScrollView(this);
+            surface.addOnAttachStateChangeListener(new View.OnAttachStateChangeListener() {
+                @Override public void onViewAttachedToWindow(View view) { }
+                @Override public void onViewDetachedFromWindow(View view) {
+                    if (cover != view) return; // Intentional removals clear the reference first.
+                    cover = null; heading = null; countdown = null;
+                    if (!stopped) {
+                        handler.removeCallbacks(wakeCheck);
+                        handler.postDelayed(wakeCheck, 150L);
+                    }
+                }
+            });
             surface.setFillViewport(true); surface.setBackgroundColor(Ui.DARK); surface.setClickable(true);
             LinearLayout panel = Ui.column(this);
             panel.setGravity(Gravity.CENTER);
@@ -205,8 +244,9 @@ public final class NightGuardService extends AccessibilityService {
                     PixelFormat.OPAQUE);
             params.gravity = Gravity.TOP | Gravity.START;
             params.setTitle("收工助手 · 夜间限制");
-            windows.addView(surface, params);
             cover = surface;
+            coverAddedAt = android.os.SystemClock.uptimeMillis();
+            windows.addView(surface, params);
         }
         heading.setText(trial ? "60 秒兼容性试锁" : "今晚，好好休息。");
         long seconds = Math.max(0, Duration.between(Instant.now(), until).getSeconds());
@@ -228,16 +268,24 @@ public final class NightGuardService extends AccessibilityService {
     private void hideCover() {
         if (cover == null) return;
         View old = cover; cover = null;
+        heading = null; countdown = null;
         try { windows.removeView(old); }
         catch (IllegalArgumentException ignored) { /* Window already removed by Android. */ }
     }
 
-    @Override public void onInterrupt() { hideCover(); }
+    @Override public void onInterrupt() {
+        hideCover();
+        if (!stopped) {
+            handler.removeCallbacks(wakeCheck);
+            handler.postDelayed(wakeCheck, 150L);
+        }
+    }
     @Override public boolean onUnbind(Intent intent) {
         cleanup(); return super.onUnbind(intent);
     }
     @Override public void onDestroy() { cleanup(); super.onDestroy(); }
     private void cleanup() {
+        stopped = true;
         android.util.Log.i("WindDown", "Night guard disconnected");
         handler.removeCallbacksAndMessages(null); hideCover();
         if (screenReceiverRegistered) { unregisterReceiver(screenReceiver); screenReceiverRegistered = false; }

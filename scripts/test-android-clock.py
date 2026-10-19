@@ -30,7 +30,7 @@ if __name__ == '__main__':
         raise RuntimeError('Disable the dedicated emulator schedule before this navigation-only check.')
     if int(before.get('trial_until', ('0', None))[0]) != 0:
         raise RuntimeError('Finish the emulator trial before this navigation-only check.')
-    apk = ROOT / 'artifacts/CustomWindDown-android-0.1.1-debug.apk'
+    apk = ROOT / 'artifacts/CustomWindDown-android-0.1.2-debug.apk'
     test_apk = ROOT / 'android/app/build/outputs/apk/androidTest/debug/app-debug-androidTest.apk'
     adb('install', '-r', str(apk))
     assert settings() == before, 'Updating the app must preserve its existing settings.'

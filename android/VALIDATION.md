@@ -1,6 +1,6 @@
 # Android MVP 验证记录
 
-日期：2026-10-19。版本：0.1.1（versionCode 2），包名 `com.fanniuzhan.winddown`。目标真机：荣耀 Magic 8 / MagicOS 10 / Android 16。
+日期：2026-10-19。版本：0.1.2（versionCode 3），包名 `com.fanniuzhan.winddown`。目标真机：荣耀 Magic 8 / MagicOS 10 / Android 16。
 
 ## 本机自动化验证
 
@@ -54,9 +54,9 @@
 
 ## 交付检查
 
-- `artifacts/CustomWindDown-android-0.1.1-debug.apk`，debug 签名测试版。`apksigner verify --verbose` 通过 APK v2 签名校验。
-- `aapt dump badging` 核实包名、版本 0.1.1、最低 API 26、目标 API 36、中文名称和启动 Activity；普通权限为 `RECEIVE_BOOT_COMPLETED` 与 `com.android.alarm.permission.SET_ALARM`，无 `INTERNET`。
-- SHA256：`42814cc79defe8fdb436d73f3c7f7846e1f8b6ed19c7f3752bf2db5b657863f9`。
+- `artifacts/CustomWindDown-android-0.1.2-debug.apk`，debug 签名测试版。`apksigner verify --verbose` 通过 APK v2 签名校验，与 0.1.1 签名证书一致，可覆盖安装。
+- `aapt dump badging` 核实包名、版本 0.1.2、最低 API 26、目标 API 36、中文名称和启动 Activity；普通权限仍为 `RECEIVE_BOOT_COMPLETED` 与 `com.android.alarm.permission.SET_ALARM`，无 `INTERNET`。
+- SHA256：`82e73cba908e6347766995a665d9d73e85ccb037f1586ccb1b063a20d2da13d8`。
 - 同目录包含 `.apk.sha256` 与 `Android-使用说明.md`；源码包含 Gradle Wrapper，分发校验值固定。产物不进入 Git。
 
 ## 0.1.1 闹钟导航修复回归
@@ -68,3 +68,12 @@
 - 准备页实际按钮检查通过：点击“打开系统闹钟”后系统 Clock 闹钟页进入前台，截图为 `17-clock-fix-preparation.png` 与 `18-clock-fix-opened.png`。检查前后计划与试锁状态不变；首次检查被模拟器 System UI 无响应弹窗阻挡，选择等待恢复后通过。
 - 新旧 APK 签名证书 SHA256 一致，0.1.1 可直接覆盖更新，不需要卸载。
 - 本轮不创建闹钟、不开始试锁、不启用计划、不操作真实手机。此处通过的是导航与备用入口验证，不能替代上文尚未通过的闹铃实际播放测试或荣耀真机验收。
+
+## 0.1.2 熄屏／解锁恢复
+
+- 用户报告在荣耀手机按电源键熄屏后，重新解锁可以访问普通应用，“本机检查”仍显示已连接。尚不能确认当时是否是已到期的 60 秒试锁；准备页和未启用状态文案已明确说明试锁在熄屏期间仍计时，确认兼容后还需开启正式计划。
+- 源码存在窗口状态检查缺口：仅凭 `cover != null` 复用视图，未检测其是否仍挂在 WindowManager 上。新版本在窗口意外脱离或不可见后重建；亮屏、解锁后清除旧前台包名、重建并分次复查；服务清理后不再重新创建窗口。系统锁屏、来电、闹钟放行条件保留，不新增权限或唤醒锁。
+- 构建成功，40 项核心回归通过，Lint 0 错误、0 警告。闹钟导航的 12 项检查在 0.1.2 再次通过。
+- `ScreenRecoveryChecks` **9 项通过**：已授权服务重连、初始遮罩、真实 WindowManager 移除后重建、不可见窗口重建、两轮熄屏／解锁，以及服务中断后恢复。检查仅临时试锁，在结束前恢复原有试锁与计划状态；结果位于 `artifacts/android-emulator/screen-recovery-results.txt`。此项证明修复后的行为，不代表已在荣耀硬件复现并定位原问题。
+- 外部脚本再次按电源键执行两轮熄屏／亮屏／解锁，遮罩均恢复；随后在熄屏时注入模拟来电，等待系统进入 `MODE_RINGTONE`，确认持续让出遮罩并截图；接听后等待 `MODE_IN_CALL`，界面仍可用，挂断返回普通应用后恢复遮罩。截图为 `20-screen-unlock-restored.png` 与 `21-screen-off-incoming-call.png`。试锁在熄屏期间正常到期，之后亮屏不再拦截；原有 23:30–06:30、每天及关闭状态保留。检查不通过瞬时无窗口状态推断来电成功。
+- 本轮没有创建闹钟；模拟电话没有产生真实通话。闹铃实际响铃、荣耀具体电话／闹钟界面及整晚后台保活仍需真机验收；不能将模拟器验证视为保证。

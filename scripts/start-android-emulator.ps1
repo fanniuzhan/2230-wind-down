@@ -76,7 +76,7 @@ $actualName = @(& $adb -s $serial emu avd name)
 if ($actualName -notcontains $avdName) { throw 'Port 5580 belongs to another emulator; no application was installed.' }
 & $adb -s $serial shell wm size 720x1600
 & $adb -s $serial shell wm density 280
-$apk = Join-Path $projectRoot 'artifacts\CustomWindDown-android-0.1.1-debug.apk'
+$apk = Join-Path $projectRoot 'artifacts\CustomWindDown-android-0.1.2-debug.apk'
 if (-not (Test-Path -LiteralPath $apk)) { throw 'Build the APK first with build-android.ps1.' }
 & $adb -s $serial install -r $apk
 if ($LASTEXITCODE -ne 0) { throw 'Test APK installation failed; application data was retained.' }
