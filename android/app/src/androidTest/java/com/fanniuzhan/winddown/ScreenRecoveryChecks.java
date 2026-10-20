@@ -5,6 +5,7 @@ import android.app.Instrumentation;
 import android.app.KeyguardManager;
 import android.app.UiAutomation;
 import android.content.Context;
+import android.content.Intent;
 import android.content.SharedPreferences;
 import android.os.Bundle;
 import android.os.ParcelFileDescriptor;
@@ -12,6 +13,7 @@ import android.os.PowerManager;
 import android.view.View;
 import android.view.WindowManager;
 import com.fanniuzhan.winddown.core.NightSchedule;
+import com.fanniuzhan.winddown.core.ForegroundWindow;
 import java.io.ByteArrayOutputStream;
 import java.io.FileInputStream;
 import java.lang.ref.WeakReference;
@@ -71,6 +73,7 @@ final class ScreenRecoveryChecks {
             if (formal) await(() -> store.schedule().enabled && store.trialUntil() == 0
                     && store.schedule().activeWindow(Instant.now(), ZoneId.systemDefault()) != null,
                     "Formal plan is active with no trial");
+            if (formal) checkAllowedRoutes(test, automation, context);
 
             // Reproduce a window removed by the system while the service's Java reference survives.
             test.runOnMainSync(() -> {
@@ -91,11 +94,12 @@ final class ScreenRecoveryChecks {
                 if (formal) Thread.sleep(cycle == 3 ? 70_000L : cycle * 2000L);
                 shell(automation, "input keyevent KEYCODE_WAKEUP");
                 shell(automation, "wm dismiss-keyguard");
-                shell(automation, "input keyevent KEYCODE_HOME");
-                await(() -> power.isInteractive() && attached(test), "Unlock restores overlay (cycle " + cycle + ")");
+                // Keep the ordinary app underneath. HOME would inject an extra recovery event.
+                awaitWithin(() -> power.isInteractive() && attached(test),
+                        "Unlock restores overlay without HOME or reopening the app (cycle " + cycle + ")", 1500L);
                 if (formal) {
                     // Ordinary app navigation must stay restricted without reopening MainActivity.
-                    shell(automation, "am start -a android.settings.SETTINGS");
+                    shell(automation, "am start -W -a android.settings.SETTINGS");
                     Thread.sleep(1500L);
                     await(() -> attached(test), "Ordinary Settings app stays covered (cycle " + cycle + ")");
                 }
@@ -125,6 +129,7 @@ final class ScreenRecoveryChecks {
             result.putString("stream", "FAIL after " + passed + " screen recovery checks: " + error
                     + "; interactive=" + context.getSystemService(PowerManager.class).isInteractive()
                     + "; keyguard=" + context.getSystemService(KeyguardManager.class).isKeyguardLocked()
+                    + "; foreground=" + owner(test) + "; attached=" + attached(test)
                     + "; error=" + new SettingsStore(context).lastError() + "\n");
         } finally {
             if (stateChanged) {
@@ -149,8 +154,47 @@ final class ScreenRecoveryChecks {
         test.finish(success ? Activity.RESULT_OK : Activity.RESULT_CANCELED, result);
     }
 
+    private static void checkAllowedRoutes(Instrumentation test, UiAutomation automation, Context context) throws Exception {
+        AllowedApps apps = new AllowedApps(context);
+        for (boolean phone : new boolean[] { false, true }) {
+            String name = phone ? "phone" : "clock";
+            test.runOnMainSync(() -> {
+                if (phone) context.startActivity(apps.phoneIntent().addFlags(Intent.FLAG_ACTIVITY_NEW_TASK));
+                else if (!apps.openClock(context)) throw new AssertionError("Clock did not open");
+            });
+            await(() -> !attached(test) && (phone ? apps.phones : apps.clocks).contains(owner(test)),
+                    name + " remains available during the formal plan");
+            shell(automation, "cmd statusbar expand-notifications");
+            // A focused shade must be dismissed; the allowed app underneath is still usable afterwards.
+            Thread.sleep(300L);
+            awaitWithin(() -> !ForegroundWindow.isSystemSurface(owner(test))
+                    && (phone ? apps.phones : apps.clocks).contains(owner(test)),
+                    "Notification shade cannot retain an exemption from " + name, 1500L);
+            shell(automation, "am start -W -a android.settings.SETTINGS");
+            await(() -> "com.android.settings".equals(owner(test)), "Ordinary Settings has actually entered the foreground");
+            awaitWithin(() -> attached(test), "Leaving " + name + " through the shade restores restriction", 1500L);
+        }
+    }
+
+    private static String owner(Instrumentation test) {
+        String[] owner = { null };
+        test.runOnMainSync(() -> {
+            try {
+                java.lang.reflect.Method method = NightGuardService.class.getDeclaredMethod("frontWindow");
+                method.setAccessible(true);
+                ForegroundWindow.Window window = (ForegroundWindow.Window) method.invoke(service());
+                owner[0] = window == null ? null : window.owner;
+            } catch (ReflectiveOperationException error) { throw new IllegalStateException(error); }
+        });
+        return owner[0];
+    }
+
     private static void await(BooleanSupplier condition, String message) throws InterruptedException {
-        long until = android.os.SystemClock.elapsedRealtime() + 5000;
+        awaitWithin(condition, message, 5000L);
+    }
+
+    private static void awaitWithin(BooleanSupplier condition, String message, long timeout) throws InterruptedException {
+        long until = android.os.SystemClock.elapsedRealtime() + timeout;
         while (!condition.getAsBoolean()) {
             if (android.os.SystemClock.elapsedRealtime() >= until) throw new AssertionError(message);
             Thread.sleep(100);

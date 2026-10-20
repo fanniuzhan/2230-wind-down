@@ -27,12 +27,14 @@ import android.widget.ScrollView;
 import android.widget.TextView;
 import android.widget.Toast;
 import com.fanniuzhan.winddown.core.GuardPolicy;
+import com.fanniuzhan.winddown.core.ForegroundWindow;
 import com.fanniuzhan.winddown.core.NightSchedule;
 import java.lang.ref.WeakReference;
 import java.time.Duration;
 import java.time.Instant;
 import java.time.ZoneId;
 import java.util.List;
+import java.util.ArrayList;
 import java.util.Locale;
 
 public final class NightGuardService extends AccessibilityService {
@@ -44,21 +46,24 @@ public final class NightGuardService extends AccessibilityService {
     private View cover;
     private TextView countdown;
     private TextView heading;
-    private String foreground;
     private long lastDiscovery;
     private long coverAddedAt;
+    private long nextTickAt;
+    private long lastShadeDismissal;
     private boolean stopped;
     private boolean screenReceiverRegistered;
-    private final Runnable tick = () -> evaluate(true);
-    private final Runnable wakeCheck = () -> evaluate(true);
+    private final Runnable tick = () -> { nextTickAt = 0; evaluate(); };
+    private final Runnable wakeCheck = this::evaluate;
+    private final Runnable windowCheck = this::evaluate;
     private final BroadcastReceiver screenReceiver = new BroadcastReceiver() {
         @Override public void onReceive(Context context, Intent intent) {
-            foreground = null; // Do not carry a pre-lock phone/clock exemption across unlock.
             if (Intent.ACTION_SCREEN_OFF.equals(intent.getAction())) {
                 handler.removeCallbacks(wakeCheck);
+                handler.removeCallbacks(windowCheck);
                 hideCover();
                 handler.removeCallbacks(tick);
-                handler.postDelayed(tick, 1000L);
+                nextTickAt = 0;
+                scheduleCheck(1000L);
             } else {
                 recheckAfterWake();
             }
@@ -68,7 +73,7 @@ public final class NightGuardService extends AccessibilityService {
     static boolean connected() { return current.get() != null; }
     static void refreshIfRunning() {
         NightGuardService service = current.get();
-        if (service != null) service.handler.post(() -> service.evaluate(true));
+        if (service != null) service.handler.post(service::evaluate);
     }
 
     @Override protected void onServiceConnected() {
@@ -94,36 +99,51 @@ public final class NightGuardService extends AccessibilityService {
 
     private void recheckAfterWake() {
         handler.removeCallbacks(wakeCheck);
-        foreground = null;
         hideCover(); // A retained Java view is not proof the system still displays its window.
-        evaluate(true);
+        evaluate();
         // Manufacturer keyguard/window state may settle after SCREEN_ON or USER_PRESENT.
         for (long delay : new long[] { 150L, 600L, 1500L }) handler.postDelayed(wakeCheck, delay);
     }
 
     @Override public void onAccessibilityEvent(AccessibilityEvent event) {
         if (store == null || stopped) return;
-        CharSequence owner = event.getPackageName();
-        if (owner != null) foreground = owner.toString();
-        evaluate(false);
+        evaluate();
+        // A window event can arrive before the interactive-window snapshot settles.
+        handler.removeCallbacks(windowCheck);
+        handler.postDelayed(windowCheck, 150L);
     }
 
-    private String activePackage() {
+    private ForegroundWindow.Window frontWindow() {
         // Inspect ownership only: never read node text, descriptions, children or input.
         List<AccessibilityWindowInfo> visible = getWindows();
+        List<ForegroundWindow.Window> snapshots = new ArrayList<>();
         for (AccessibilityWindowInfo window : visible) {
-            if (window.getType() != AccessibilityWindowInfo.TYPE_APPLICATION || !window.isActive()) continue;
+            if (window.getType() == AccessibilityWindowInfo.TYPE_ACCESSIBILITY_OVERLAY
+                    || window.getType() == AccessibilityWindowInfo.TYPE_INPUT_METHOD) continue;
+            if (!window.isFocused() && !window.isActive()) continue;
             AccessibilityNodeInfo root = window.getRoot();
-            if (root == null) continue;
-            CharSequence owner = root.getPackageName();
-            String result = owner == null ? null : owner.toString();
-            root.recycle();
-            if (result != null) return result;
+            String owner = null;
+            if (root != null) {
+                CharSequence name = root.getPackageName();
+                owner = name == null ? null : name.toString();
+                root.recycle();
+            }
+            snapshots.add(new ForegroundWindow.Window(owner, window.getLayer(), window.isFocused(),
+                    window.isActive(), window.getType() == AccessibilityWindowInfo.TYPE_APPLICATION, false));
         }
-        return foreground;
+        // No cached package fallback: a previous phone/clock must never grant an indefinite exemption.
+        return ForegroundWindow.select(snapshots);
     }
 
-    private void evaluate(boolean updateTimer) {
+    private void scheduleCheck(long delay) {
+        long due = android.os.SystemClock.uptimeMillis() + delay;
+        if (nextTickAt != 0 && nextTickAt <= due) return; // Events must not postpone an earlier check.
+        handler.removeCallbacks(tick);
+        nextTickAt = due;
+        handler.postDelayed(tick, delay);
+    }
+
+    private void evaluate() {
         if (store == null || stopped) return;
         try {
             long nowMillis = System.currentTimeMillis();
@@ -140,7 +160,11 @@ public final class NightGuardService extends AccessibilityService {
             PowerManager power = getSystemService(PowerManager.class);
             KeyguardManager keyguard = getSystemService(KeyguardManager.class);
             AudioManager audio = getSystemService(AudioManager.class);
-            boolean systemLocked = keyguard != null && keyguard.isKeyguardLocked();
+            ForegroundWindow.Window front = frontWindow();
+            String owner = front == null ? null : front.owner;
+            boolean interactive = power == null || power.isInteractive();
+            boolean systemLocked = keyguard != null && ForegroundWindow.systemLocked(
+                    keyguard.isDeviceLocked(), keyguard.isKeyguardLocked(), front);
             boolean ringing = audio != null && audio.getMode() == AudioManager.MODE_RINGTONE;
             boolean alarmRinging = false;
             if (restricted && audio != null) {
@@ -154,34 +178,37 @@ public final class NightGuardService extends AccessibilityService {
             if (!allowed.ready()) {
                 hideCover();
                 store.error("未能识别电话或闹钟组件，未开始拦截；请先完成本机兼容性检查。");
-            } else if ((power == null || power.isInteractive()) && GuardPolicy.shouldCover(restricted,
-                    systemLocked, ringing, alarmRinging, activePackage(), allowed.phones, allowed.clocks)) {
+            } else if (interactive && GuardPolicy.shouldCover(restricted,
+                    systemLocked, ringing, alarmRinging, owner, allowed.phones, allowed.clocks)) {
+                if (Build.VERSION.SDK_INT >= 31 && ForegroundWindow.isSystemSurface(owner)
+                        && elapsed - lastShadeDismissal >= 500L) {
+                    // Close the shade only while restricting an unlocked, non-ringing device.
+                    // This does not navigate away from phone/clock or alter their audio.
+                    lastShadeDismissal = elapsed;
+                    performGlobalAction(GLOBAL_ACTION_DISMISS_NOTIFICATION_SHADE);
+                }
                 Instant until = active != null ? active.end : Instant.ofEpochMilli(store.trialUntil());
                 showCover(until, trial && active == null);
                 store.error("");
             } else {
                 hideCover();
             }
-            if (updateTimer) {
-                handler.removeCallbacks(tick);
-                long delay = restricted ? 1000L : schedule.enabled
-                        ? Math.max(100L, Math.min(60_000L, Duration.between(now, schedule.nextTransition(now, ZoneId.systemDefault())).toMillis()))
-                        : 60_000L;
-                handler.postDelayed(tick, delay);
-            }
+            long delay = restricted ? (interactive ? 250L : 1000L) : schedule.enabled
+                    ? Math.max(100L, Math.min(60_000L, Duration.between(now,
+                            schedule.nextTransition(now, ZoneId.systemDefault())).toMillis())) : 60_000L;
+            scheduleCheck(delay);
         } catch (RuntimeException error) {
             hideCover();
             try { store.error("夜间拦截暂未生效：" + error.getClass().getSimpleName()); }
             catch (RuntimeException ignored) { /* Storage may be unavailable; never block call UI on failure. */ }
-            handler.removeCallbacks(tick);
-            handler.postDelayed(tick, 5000L);
+            scheduleCheck(5000L);
         }
     }
 
     private void showCover(Instant until, boolean trial) {
         if (cover != null && ((!cover.isAttachedToWindow()
                 && android.os.SystemClock.uptimeMillis() - coverAddedAt >= 500L)
-                || cover.getVisibility() != View.VISIBLE)) hideCover();
+                || cover.getVisibility() != View.VISIBLE || cover.getWindowVisibility() != View.VISIBLE)) hideCover();
         if (cover == null) {
             ScrollView surface = new ScrollView(this);
             surface.addOnAttachStateChangeListener(new View.OnAttachStateChangeListener() {
@@ -287,7 +314,7 @@ public final class NightGuardService extends AccessibilityService {
     private void cleanup() {
         stopped = true;
         android.util.Log.i("WindDown", "Night guard disconnected");
-        handler.removeCallbacksAndMessages(null); hideCover();
+        handler.removeCallbacksAndMessages(null); nextTickAt = 0; hideCover();
         if (screenReceiverRegistered) { unregisterReceiver(screenReceiver); screenReceiverRegistered = false; }
         if (current.get() == this) current = new WeakReference<>(null);
     }

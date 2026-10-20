@@ -108,8 +108,50 @@ public final class NightScheduleTest {
         });
         test("all applications are usable outside the interval", () -> check(!cover(false, false, false, "com.example.social")));
         test("system settings are not an app-provided temporary exit", () -> check(cover(true, false, false, "com.android.settings")));
+        testForegroundWindows();
         System.out.println("\n" + passed + " passed, " + failed + " failed.");
         if (failed != 0) throw new AssertionError("Regression failures: " + failed);
+    }
+
+    private static void testForegroundWindows() {
+        ForegroundWindow.Window phone = new ForegroundWindow.Window("com.hihonor.contacts", 1, true, true, true, false);
+        ForegroundWindow.Window clock = new ForegroundWindow.Window("com.hihonor.deskclock", 1, true, true, true, false);
+        ForegroundWindow.Window shade = new ForegroundWindow.Window("com.android.systemui", 5, true, true, false, false);
+        ForegroundWindow.Window social = new ForegroundWindow.Window("com.example.social", 1, true, true, true, false);
+        test("focused phone remains available", () -> check(ForegroundWindow.select(Arrays.asList(phone)) == phone));
+        test("focused clock remains available", () -> check(ForegroundWindow.select(Arrays.asList(clock)) == clock));
+        test("notification shade overrides the allowed phone underneath", () ->
+                check(ForegroundWindow.select(Arrays.asList(phone, shade)) == shade));
+        test("notification shade overrides the allowed clock underneath", () ->
+                check(ForegroundWindow.select(Arrays.asList(shade, clock)) == shade));
+        test("active shade with delayed focus still overrides the phone", () -> {
+            ForegroundWindow.Window activeShade = new ForegroundWindow.Window("com.android.systemui", 5, false, true, false, false);
+            check(ForegroundWindow.select(Arrays.asList(phone, activeShade)) == activeShade);
+        });
+        test("unreadable top window never falls back to an allowed phone", () -> {
+            ForegroundWindow.Window unknown = new ForegroundWindow.Window(null, 5, true, true, false, false);
+            check(ForegroundWindow.select(Arrays.asList(phone, unknown)).owner == null);
+        });
+        test("guard overlay is excluded from foreground app selection", () -> {
+            ForegroundWindow.Window own = new ForegroundWindow.Window("com.fanniuzhan.winddown", 10, true, true, false, true);
+            check(ForegroundWindow.select(Arrays.asList(own, clock)) == clock);
+        });
+        test("inactive status decor does not block the phone", () -> {
+            ForegroundWindow.Window decor = new ForegroundWindow.Window("com.android.systemui", 9, false, false, false, false);
+            check(ForegroundWindow.select(Arrays.asList(phone, decor)) == phone);
+        });
+        test("missing windows cannot retain a previous phone exemption", () ->
+                check(ForegroundWindow.select(java.util.Collections.emptyList()) == null));
+        test("authentication lock is preserved even above a visible app", () ->
+                check(ForegroundWindow.systemLocked(true, true, social)));
+        test("stale keyguard flag does not exempt an authenticated ordinary app", () ->
+                check(!ForegroundWindow.systemLocked(false, true, social)));
+        test("visible system keyguard continues to yield", () ->
+                check(ForegroundWindow.systemLocked(false, true, shade)));
+        test("unknown foreground does not bypass the system keyguard", () ->
+                check(ForegroundWindow.systemLocked(false, true, null)));
+        test("leaving phone for an ordinary app loses its exemption", () ->
+                check(cover(true, false, false, ForegroundWindow.select(Arrays.asList(social)).owner)));
     }
 
     private static boolean cover(boolean restricted, boolean locked, boolean ringing, String owner) {

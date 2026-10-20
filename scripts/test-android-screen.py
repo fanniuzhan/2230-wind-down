@@ -22,7 +22,7 @@ def main():
     before = values()
     if before.get('enabled') == 'true' or before.get('compatibility') == 'true' or int(before.get('trial_until', '0')):
         raise RuntimeError('Requires an idle test emulator with formal plan and compatibility confirmation disabled.')
-    a('install', '-r', str(t['ROOT'] / 'artifacts/CustomWindDown-android-0.1.2-debug.apk'))
+    a('install', '-r', str(t['ROOT'] / 'artifacts/CustomWindDown-android-0.1.3-debug.apk'))
     a('install', '-r', '-t', str(t['ROOT'] / 'android/app/build/outputs/apk/androidTest/debug/app-debug-androidTest.apk'))
     t['reconnect_test_service']()
     mode = 'formal_recovery' if args.formal_plan else 'screen_recovery'
@@ -32,7 +32,7 @@ def main():
                timeout=240 if args.formal_plan else 90)
     (t['OUT'] / ('formal-screen-recovery-results.txt' if args.formal_plan else 'screen-recovery-results.txt')).write_text(output, encoding='utf-8')
     print(output, flush=True)
-    expected = 'PASS: 17 formal-plan' if args.formal_plan else 'PASS: 9 trial'
+    expected = 'PASS: 25 formal-plan' if args.formal_plan else 'PASS: 9 trial'
     if expected not in output or 'INSTRUMENTATION_CODE: -1' not in output:
         raise AssertionError('Window lifecycle regression failed.')
     assert all(values().get(key) == before.get(key) for key in before if key != 'last_error'), 'Test state not restored.'
